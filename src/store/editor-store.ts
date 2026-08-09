@@ -45,6 +45,7 @@ interface EditorState {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
+  playbackRate: number;
   zoom: number;
   
   // Canvas
@@ -91,12 +92,14 @@ interface EditorState {
   togglePlay: () => void;
   seek: (time: number) => void;
   setZoom: (zoom: number) => void;
+  setPlaybackRate: (rate: number) => void;
   
   // Actions - Tracks
   addTrack: (type: TimelineTrack['type'], name: string) => void;
   deleteTrack: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
   toggleTrackVisibility: (trackId: string) => void;
+  toggleTrackLock: (trackId: string) => void;
   reorderTracks: (fromIndex: number, toIndex: number) => void;
   
   // Actions - Clips
@@ -206,6 +209,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   currentTime: 0,
   duration: 0,
   isPlaying: false,
+  playbackRate: 1,
   zoom: 1,
   canvasObjects: [],
   selectedObjectId: null,
@@ -344,6 +348,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   
   setZoom: (zoom: number) => set({ zoom: Math.max(0.1, Math.min(10, zoom)) }),
 
+  setPlaybackRate: (rate: number) =>
+    set({ playbackRate: Math.max(0.25, Math.min(4, rate)) }),
+
   // Track Actions
   addTrack: (type: TimelineTrack['type'], name: string) => {
     const { currentSceneId, tracks } = get();
@@ -385,6 +392,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       tracks: state.tracks.map((t) =>
         t.id === trackId ? { ...t, visible: !t.visible } : t
+      ),
+    }));
+  },
+
+  toggleTrackLock: (trackId: string) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) =>
+        t.id === trackId ? { ...t, locked: !t.locked } : t
       ),
     }));
   },
@@ -442,10 +457,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }));
   },
 
-  trimClip: (clipId: string, trimStart: number, trimEnd: number) => {
+  trimClip: (clipId: string, newStart: number, newDuration: number) => {
+    const safeDur = Math.max(200, newDuration);
     set((state) => ({
       clips: state.clips.map((c) =>
-        c.id === clipId ? { ...c, trimStart, trimEnd } : c
+        c.id === clipId
+          ? {
+              ...c,
+              startTime: newStart,
+              duration: safeDur,
+              endTime: newStart + safeDur,
+            }
+          : c
       ),
     }));
   },
@@ -501,20 +524,33 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   // Keyframe Actions
   addKeyframe: (clipId: string, time: number, properties: KeyframeProperties) => {
-    const newKeyframe: Keyframe = {
-      id: uuidv4(),
-      clipId,
-      time,
-      properties,
-      easing: 'ease-in-out',
-    };
-    
+    // upsert: replace an existing keyframe at (nearly) the same time
     set((state) => ({
-      clips: state.clips.map((c) =>
-        c.id === clipId
-          ? { ...c, keyframes: [...c.keyframes, newKeyframe].sort((a, b) => a.time - b.time) }
-          : c
-      ),
+      clips: state.clips.map((c) => {
+        if (c.id !== clipId) return c;
+        const existing = c.keyframes.find((k) => Math.abs(k.time - time) < 16);
+        if (existing) {
+          return {
+            ...c,
+            keyframes: c.keyframes.map((k) =>
+              k.id === existing.id
+                ? { ...k, time, properties, easing: 'ease-in-out' }
+                : k
+            ),
+          };
+        }
+        const newKeyframe: Keyframe = {
+          id: uuidv4(),
+          clipId,
+          time,
+          properties,
+          easing: 'ease-in-out',
+        };
+        return {
+          ...c,
+          keyframes: [...c.keyframes, newKeyframe].sort((a, b) => a.time - b.time),
+        };
+      }),
     }));
     get().saveSnapshot();
   },
@@ -883,6 +919,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       currentTime: 0,
       duration: 0,
       isPlaying: false,
+      playbackRate: 1,
       zoom: 1,
       canvasObjects: [],
       selectedObjectId: null,

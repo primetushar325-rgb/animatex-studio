@@ -226,3 +226,47 @@ body {
   0% { transform: scale(0.5); opacity: 1; }
   100% { transform: scale(1.5); opacity: 0; }
 }
+
+/* ============================================================================
+   EDITOR THEME TOKENS (scoped to /editor routes)
+   ============================================================================
+   Background near-black #0B0B10 · panels #16161C
+   Primary accent light blue #5B8DEF · secondary accent violet #8B5CF6
+   White primary text · #9CA3AF secondary text
+   Blue→violet gradient reserved for primary CTAs / active states
+   ============================================================================ */
+:root {
+  --editor-bg: #0B0B10;
+  --editor-panel: #16161C;
+  --editor-panel-2: #1E1E28;
+  --editor-panel-3: #262634;
+  --editor-accent: #5B8DEF;
+  --editor-accent-2: #8B5CF6;
+  --editor-text: #FFFFFF;
+  --editor-text-2: #9CA3AF;
+  --editor-border: #2A2A38;
+}
+
+.editor-surface { background-color: var(--editor-bg); }
+.editor-panel { background-color: var(--editor-panel); }
+.editor-panel-2 { background-color: var(--editor-panel-2); }
+.editor-panel-3 { background-color: var(--editor-panel-3); }
+.editor-text-2 { color: var(--editor-text-2); }
+.editor-border { border-color: var(--editor-border); }
+.editor-accent { color: var(--editor-accent); }
+
+.editor-gradient {
+  background-image: linear-gradient(135deg, var(--editor-accent), var(--editor-accent-2));
+}
+.editor-input {
+  background-color: var(--editor-panel-2);
+  border: 1px solid var(--editor-border);
+  color: var(--editor-text);
+  border-radius: 0.5rem;
+}
+.editor-input::placeholder { color: var(--editor-text-2); }
+
+/* subtle scrollbars for panels */
+.editor-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+.editor-scroll::-webkit-scrollbar-thumb { background: #33333F; border-radius: 2px; }
+.editor-scroll { scrollbar-width: thin; scrollbar-color: #33333F transparent; }

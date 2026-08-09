@@ -3,7 +3,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
+import { useAuthStore } from '@/store/auth-store';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  getPublicCharacters,
+  getCloudLibrary,
+  addToLibrary,
+  removeFromLibrary,
+  type LibraryCharacter,
+} from '@/lib/editor/characterLibrary';
+import { SOUND_LIBRARY, previewSound, renderSound } from '@/lib/editor/soundKit';
+import { Mic } from 'lucide-react';
 import type {
   CharacterType,
   BackgroundCategory,
@@ -96,7 +106,16 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
   const [uploading, setUploading] = useState<UploadKind | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Character library (cloud + public folder)
+  const [libraryItems, setLibraryItems] = useState<LibraryCharacter[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryUploading, setLibraryUploading] = useState(false);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [sfxBusy, setSfxBusy] = useState<string | null>(null);
+
   const characterInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const propInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -121,6 +140,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
   } = useEditorStore();
 
   const { currentProject } = useProjectStore();
+  const { user } = useAuthStore();
 
   const selectedObject = canvasObjects.find((o) => o.id === selectedObjectId) || null;
 
@@ -128,6 +148,81 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab]);
+
+  // Load character library (public folder + user's cloud library)
+  const loadLibrary = useCallback(async () => {
+    setLibraryLoading(true);
+    setLibraryError(null);
+    try {
+      const [publicChars, cloudChars] = await Promise.all([
+        getPublicCharacters(),
+        user?.uid ? getCloudLibrary(user.uid) : Promise.resolve([]),
+      ]);
+      setLibraryItems([...publicChars, ...cloudChars]);
+    } catch (err) {
+      setLibraryError(err instanceof Error ? err.message : 'Library failed to load');
+    } finally {
+      setLibraryLoading(false);
+    }
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (isOpen) void loadLibrary();
+  }, [isOpen, loadLibrary]);
+
+  const handleAddToLibrary = async (file: File) => {
+    if (!user?.uid) {
+      setLibraryError('লগইন করা লাগবে — Library আপনার অ্যাকাউন্টে সেভ হয়।');
+      return;
+    }
+    setLibraryUploading(true);
+    setLibraryError(null);
+    try {
+      const name = file.name.replace(/\.[^.]+$/, '') || 'Character';
+      await addToLibrary(user.uid, file, name);
+      await loadLibrary();
+    } catch (err) {
+      setLibraryError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setLibraryUploading(false);
+    }
+  };
+
+  const handleAddSound = async (id: string, name: string) => {
+    setSfxBusy(id);
+    try {
+      const blob = await renderSound(id);
+      const audioId = uuidv4();
+      const url = URL.createObjectURL(blob);
+      const track = findTrack('music');
+      const clip: AudioClip = {
+        id: audioId,
+        projectId: currentProject?.id || '',
+        name,
+        type: 'music',
+        fileUrl: url,
+        duration: 1000,
+      };
+      addAudioClip(clip);
+      if (track) addClip(track.id, audioId, 0, 1000);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Sound failed to add');
+    } finally {
+      setSfxBusy(null);
+    }
+  };
+
+  const handleRemoveFromLibrary = async (item: LibraryCharacter) => {
+    if (!user?.uid) return;
+    setLibraryError(null);
+    try {
+      await removeFromLibrary(user.uid, item);
+      setConfirmDeleteId(null);
+      await loadLibrary();
+    } catch (err) {
+      setLibraryError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
 
   const findTrack = useCallback(
     (type: string) => tracks.find((t) => t.sceneId === currentSceneId && t.type === type),
@@ -360,13 +455,13 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
 
       {/* Panel */}
       <div
-        className="w-80 bg-white h-full shadow-xl overflow-hidden flex flex-col"
+        className="w-80 editor-panel h-full shadow-xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Assets</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 p-1">
+          <h2 className="text-lg font-semibold text-white">Assets</h2>
+          <button onClick={onClose} className="text-[var(--editor-text-2)] hover:text-white p-1">
             ✕
           </button>
         </div>
@@ -390,18 +485,151 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
         <div className="flex-1 overflow-y-auto p-4">
           {activeTab === 'characters' && (
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-700">Built-in Characters</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {builtInCharacters.map((char) => (
+              {/* Character Library (cloud PNGs + public folder) */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-gray-700">📚 Character Library</h3>
                   <button
-                    key={char.type}
-                    onClick={() => handleAddCharacter(char)}
-                    className="p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
+                    onClick={() => libraryInputRef.current?.click()}
+                    disabled={libraryUploading}
+                    className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 flex items-center gap-1"
                   >
-                    <span className="text-2xl mb-1">{char.icon}</span>
-                    <span className="text-xs text-gray-600">{char.name}</span>
+                    {libraryUploading ? (
+                      <span className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent" />
+                    ) : (
+                      '+'
+                    )}
+                    Add PNG
                   </button>
-                ))}
+                </div>
+                <input
+                  ref={libraryInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleAddToLibrary(file);
+                    e.target.value = '';
+                  }}
+                />
+
+                {libraryError && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 mb-2">
+                    {libraryError}
+                  </p>
+                )}
+
+                {libraryLoading ? (
+                  <p className="text-xs text-gray-400 py-2">Loading library…</p>
+                ) : libraryItems.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-2">
+                    এখনো কোনো character নেই। PNG যোগ করতে &quot;+ Add PNG&quot; চাপো — আপনার ক্লাউড স্টোরেজে সেভ হবে।
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {libraryItems.map((item) => (
+                      <div key={item.id} className="relative group">
+                        <button
+                          onClick={() => {
+                            spawnObject('character', {
+                              characterType: 'custom',
+                              name: item.name,
+                              imageUrl: item.imageUrl,
+                              expression: 'neutral',
+                              action: 'idle',
+                            });
+                            onClose();
+                          }}
+                          className="w-full p-2 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
+                          title={`${item.name} — click to add`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="w-14 h-16 object-contain mb-1 rounded"
+                            loading="lazy"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src =
+                                'data:image/svg+xml;utf8,' +
+                                encodeURIComponent(
+                                  '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="64"><rect width="56" height="64" rx="8" fill="#e2e8f0"/><text x="28" y="38" font-size="26" text-anchor="middle">🖼️</text></svg>'
+                                );
+                            }}
+                          />
+                          <span className="text-[10px] text-gray-600 truncate w-full text-center">
+                            {item.name}
+                          </span>
+                        </button>
+                        {item.source === 'cloud' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(item.id);
+                            }}
+                            className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Remove from library"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!user?.uid && (
+                  <p className="text-[10px] text-amber-600 mt-1">
+                    Cloud library-এর জন্য লগইন লাগবে। অথবা public folder থেকে character আসে।
+                  </p>
+                )}
+
+                {/* Delete confirm */}
+                {confirmDeleteId && (
+                  <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40">
+                    <div className="bg-white rounded-xl p-4 max-w-xs w-full shadow-xl">
+                      <h4 className="font-semibold text-sm mb-2">Remove this character?</h4>
+                      <p className="text-xs text-gray-500 mb-4">
+                        এটি আপনার ক্লাউড লাইব্রেরি থেকে মুছে যাবে।
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            const item = libraryItems.find((i) => i.id === confirmDeleteId);
+                            if (item) void handleRemoveFromLibrary(item);
+                            else setConfirmDeleteId(null);
+                          }}
+                          className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 border-t">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Built-in Characters</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {builtInCharacters.map((char) => (
+                    <button
+                      key={char.type}
+                      onClick={() => handleAddCharacter(char)}
+                      className="p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
+                    >
+                      <span className="text-2xl mb-1">{char.icon}</span>
+                      <span className="text-xs text-gray-600">{char.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {customCharacters.length > 0 && (
@@ -668,13 +896,42 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                 }}
                 className="w-full py-4 bg-red-50 border-2 border-red-200 rounded-xl text-red-600 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
               >
-                <span className="text-2xl">🎙️</span>
+                <Mic size={18} />
                 Record Voice
               </button>
 
               <div className="pt-4 border-t">
                 <h3 className="text-sm font-medium text-gray-700 mb-2">Upload Audio</h3>
                 {uploadButton('audio', 'Upload MP3, WAV, M4A, OGG', audioInputRef, 'audio/*,.mp3,.wav,.m4a,.ogg')}
+              </div>
+
+              <div className="pt-4 border-t">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">🎵 Sound Library (built-in)</h3>
+                <p className="text-xs text-gray-500 mb-2">Preview বাজিয়ে পছন্দ হলে add করুন — Music track-এ যোগ হবে।</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {SOUND_LIBRARY.map((item) => (
+                    <div key={item.id} className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => previewSound(item.id)}
+                        className="w-8 h-8 shrink-0 rounded-lg bg-gray-100 hover:bg-blue-100 flex items-center justify-center"
+                        title="Preview"
+                      >
+                        ▶
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-700 truncate">{item.name}</p>
+                        <p className="text-[9px] text-gray-400">{item.category}</p>
+                      </div>
+                      <button
+                        onClick={() => void handleAddSound(item.id, item.name)}
+                        disabled={sfxBusy === item.id}
+                        className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] disabled:opacity-50"
+                      >
+                        {sfxBusy === item.id ? '…' : '+ Add'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="pt-4 border-t">

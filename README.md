@@ -255,3 +255,79 @@ Eight professional features — all built in-house, zero paid APIs:
 ### Extra polish
 - Object transform strip now includes motion, keyframes, text styles.
 - Duplicate (Ctrl+D), group delete, "N selected" indicator.
+
+---
+
+## 🆕 Character Library (2026-08)
+
+Grow your own character collection — real PNG images that show up in the
+editor's character picker and get drawn on the canvas when clicked.
+
+### Two ways to add characters
+
+**1. From the website (cloud library, per account)**
+- Open **Assets → Characters → 📚 Character Library → "+ Add PNG"**
+- Pick any PNG/JPEG/WEBP — it uploads to your **Firebase Storage**
+  (`users/{uid}/characters/library/{id}.png`) and the record is saved in
+  **Firestore** (`users/{uid}/characterLibrary/{id}`).
+- It appears instantly with a real thumbnail; click it to drop the character
+  on the canvas. Hover shows ✕ to remove.
+- Needs login. Falls back to Cloudinary `/api/upload` when Firebase Storage
+  isn't configured, and to localStorage when Firestore is unavailable.
+
+**2. From the repo (public folder, shown to everyone)**
+- Drop PNGs into **`public/characters/`** and list them in
+  **`public/characters/manifest.json`**:
+  ```json
+  [ { "name": "Robot", "file": "robot.png" } ]
+  ```
+- Push + redeploy — done. No cloud config needed. Two sample characters
+  (Robot, Ninja) are included.
+
+### Storage paths & rules (already configured)
+- Storage: `users/{uid}/characters/library/{file}.png` — owner read/write, image/*, ≤10 MB
+- Firestore: `users/{uid}/characterLibrary/{id}` — owner read/write (rule added to `firestore.rules`)
+
+---
+
+## 🆕 Bug-fix + Premium UI update (2026-08)
+
+### Fixed
+1. **Video export produced white/blank short clips** — the export canvas was `display:none` (never rasterized) and frames were advanced with `requestAnimationFrame` (unreliable timing). Now: off-screen-but-rendered canvas, manual `track.requestFrame()` capture, wall-clock `setTimeout` pacing, GIF default on touch devices, and automatic "use GIF" guidance when video fails.
+2. **Playback jumped/restarted randomly** — the timeline loop restarted every time the scene changed. Now a single ref-based wall-clock loop runs the whole sequence smoothly without restarting.
+3. **Keyframes "didn't work"** — results are now visible while scrubbing (paused), repeated keyframe presses update instead of duplicating, and drag-start snaps to the interpolated position (no jump).
+4. **Back button could hang** — it now navigates instantly and saves in the background; autosave can never throw.
+5. **Timeline clips** can now be dragged to move and edge-dragged to trim (CapCut-style), with a taller touch-friendly track.
+
+### Upgraded
+- Dark premium editor toolbar (gradient buttons, glow), gradient bottom navigation, welcome hint on empty canvas, draft-restore toast.
+
+---
+
+## 🆕 Editor Extension — Master Prompt build (2026-08)
+
+- **Bottom tab bar**: Character · Media · Templates · Image Gen (AI) · Video Gen (AI) · AI Voice · AI Character (AI)
+- **Character Library bottom sheet**: search, category chips, 2-col grid with Edit pill + FRONT / 3/4 FRONT / 3/4 BACK pose switcher, 4 placeholder slots (`// TODO: replace with real character assets`)
+- **Templates modal**: "Use Templates To Create Project Faster", tabs + search + chips, "+ Blank Scene" default-selected, 3 placeholder templates (`// TODO: replace with real scene thumbnails`), sticky Apply Scene button
+- **Timeline upgrade**: scene tabs with kebab menu + add scene + nav arrows, collapsible handle, lock/unlock tracks, clip drag/trim, toolbar (duplicate/cut/keyframe/undo/redo/zoom/fullscreen), playback speed 0.5–2x, time readout
+- **Top toolbar**: settings (watermark/timeline toggles), notifications, history, export-image, prominent gradient Download pill, subtext row (v4.0 · build · project-id · ratio)
+- **Editor theme** (editor routes only): `#0B0B10` bg, `#16161C` panels, `#5B8DEF` accent, `#8B5CF6` violet, blue→violet gradient on CTAs — via CSS variables in `globals.css` (`.editor-surface`, `.editor-panel`, `.editor-gradient`, `.editor-input`)
+
+---
+
+## 🆕 MASTER PROMPT PART 2 (2026-08)
+
+- **Emoji → lucide icons site-wide** (editor chrome): bottom nav, toolbars, timeline, panels — all controls now use real SVG icons (16–20px, currentColor, strokeWidth 2). Emojis remain only in user-facing text/thumbs.
+- **IconButton** component with `default / active / premium (AI·PRO badge) / locked` variants + PillButton.
+- **Feature gate + credits** (`useFeatureGate`): Free vs Pro caps (1080p & watermark removal = Pro), AI credits badge near AI tools, graceful no-credit messages.
+- **AI Voice (real free TTS)**: browser Web Speech API, Bangla-first, preview + render clip to timeline.
+- **Sound library**: 8 procedural SFX/music (WebAudio) with preview + add.
+- **Background variants**: day/night/sunset/rain/cloudy tint (renderer + toolbar picker).
+- **Flip horizontal** on objects.
+- **Global search (Ctrl+K)** across characters/backgrounds/props/templates.
+- **Recently used + Favorites** quick panels in Character panel.
+- **One-time tutorial overlays** for panels.
+- **Bangla/English UI toggle** (settings).
+- **Project file export (.animatex) + import**; **aspect presets 16:9 / 9:16 / 1:1** in export.
+- **Scene transition picker** (fade/crossfade/slide/zoom) in Scenes panel; **Duplicate Project** button.
+- Stubs with clear "Coming soon" state: Text→Image, Text→Video.

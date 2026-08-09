@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { useEditorStore } from '@/store/editor-store';
+import { useProjectStore } from '@/store/project-store';
+import { X, Pencil, Copy, Trash2 } from 'lucide-react';
+import type { Scene } from '@/types/animation';
 
 interface ScenePanelProps {
   isOpen: boolean;
@@ -20,6 +23,7 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
     reorderScenes,
     updateScene,
   } = useEditorStore();
+  const { duplicateProject, currentProject } = useProjectStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -49,14 +53,14 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
       {/* Panel */}
       <div
-        className="w-72 bg-white h-full shadow-xl overflow-hidden flex flex-col"
+        className="w-72 editor-panel h-full shadow-xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Scenes</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            ✕
+          <h2 className="text-lg font-semibold text-white">Scenes</h2>
+          <button onClick={onClose} className="text-[var(--editor-text-2)] hover:text-white">
+            <X size={16} />
           </button>
         </div>
 
@@ -110,7 +114,7 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
                       className="p-1 hover:bg-gray-200 rounded"
                       title="Rename"
                     >
-                      ✏️
+                      <Pencil size={12} />
                     </button>
                     <button
                       onClick={(e) => {
@@ -120,7 +124,7 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
                       className="p-1 hover:bg-gray-200 rounded"
                       title="Duplicate"
                     >
-                      📋
+                      <Copy size={12} />
                     </button>
                     <button
                       onClick={(e) => {
@@ -131,7 +135,7 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
                       title="Delete"
                       disabled={scenes.length <= 1}
                     >
-                      🗑️
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
@@ -164,18 +168,67 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
                     />
                   </span>
                 </div>
+                <div className="flex items-center gap-1 mt-1.5" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-[10px] text-gray-400">Transition</span>
+                  <select
+                    value={scene.transition.type}
+                    onChange={(e) =>
+                      updateScene(scene.id, {
+                        transition: {
+                          ...scene.transition,
+                          type: e.target.value as Scene['transition']['type'],
+                        },
+                      })
+                    }
+                    className="flex-1 px-1.5 py-0.5 border border-gray-300 rounded text-[10px]"
+                  >
+                    <option value="none">None</option>
+                    <option value="fade">Fade</option>
+                    <option value="crossfade">Crossfade</option>
+                    <option value="slide">Slide</option>
+                    <option value="zoom">Zoom</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    max={2000}
+                    step={100}
+                    value={scene.transition.duration}
+                    onChange={(e) =>
+                      updateScene(scene.id, {
+                        transition: {
+                          ...scene.transition,
+                          duration: parseInt(e.target.value, 10) || 0,
+                        },
+                      })
+                    }
+                    className="w-14 px-1 py-0.5 border border-gray-300 rounded text-[10px]"
+                    title="Transition duration (ms)"
+                  />
+                </div>
               </div>
             ))}
         </div>
 
         {/* Add Scene Button */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 space-y-2">
           <button
             onClick={() => addScene()}
             className="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
           >
             <span>+</span> Add Scene
           </button>
+          {currentProject && (
+            <button
+              onClick={async () => {
+                await duplicateProject(currentProject.id, `${currentProject.name} (Copy)`);
+                alert('Project duplicated — dashboard-এ দেখুন।');
+              }}
+              className="w-full py-2.5 border border-gray-300 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <Copy size={14} /> Duplicate Project
+            </button>
+          )}
         </div>
       </div>
 

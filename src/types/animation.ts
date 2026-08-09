@@ -210,6 +210,10 @@ export interface CanvasObject {
   motion?: MotionPreset;
   /** Scene-time (ms) when the motion should start (default 0) */
   motionStart?: number;
+  /** Flip horizontally (mirror) */
+  flipX?: boolean;
+  /** Day/night/weather tint variant for backgrounds */
+  variant?: 'day' | 'night' | 'rain' | 'cloudy' | 'sunset' | undefined;
 }
 
 // Backgrounds

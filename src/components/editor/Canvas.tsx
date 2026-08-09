@@ -57,6 +57,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [dragging, setDragging] = useState(false);
   const dragRef = useRef<DragState | null>(null);
   const animClockRef = useRef(0);
   const lastFrameRef = useRef(0);
@@ -94,10 +95,14 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const sceneObjects = canvasObjects.filter((o) => o.sceneId === currentSceneId);
   const selectedObject = sceneObjects.find((o) => o.id === selectedObjectId) || null;
 
-  // During playback: keyframe interpolation per object + lip-sync
-  const effectiveObjects = isPlaying
-    ? sceneObjects.map((o) => applyKeyframes(o, clips, currentTime, currentSceneId ?? undefined))
-    : sceneObjects;
+  // Keyframe interpolation: applied while playing AND while scrubbing paused,
+  // but skipped while the user is actively dragging an object so edits feel direct.
+  const effectiveObjects = useMemo(() => {
+    if (dragging) return sceneObjects;
+    return sceneObjects.map((o) =>
+      applyKeyframes(o, clips, currentTime, currentSceneId ?? undefined)
+    );
+  }, [sceneObjects, clips, currentTime, currentSceneId, dragging]);
 
   // -------------------------------------------------------------------------
   // Drawing
@@ -332,6 +337,21 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     handle?: DragState['handle'],
     anchor?: Point
   ) => {
+    // If keyframes exist, commit the interpolated position so dragging starts
+    // exactly where the object is drawn (no jump).
+    const eff = applyKeyframes(obj, clips, currentTime, currentSceneId ?? undefined);
+    if (eff !== obj) {
+      updateCanvasObject(obj.id, {
+        x: eff.x,
+        y: eff.y,
+        scaleX: eff.scaleX,
+        scaleY: eff.scaleY,
+        rotation: eff.rotation,
+        opacity: eff.opacity,
+      });
+      obj = eff;
+    }
+
     const multiIds = selectedObjectIds.includes(obj.id) && selectedObjectIds.length > 1
       ? selectedObjectIds
       : [obj.id];
@@ -340,6 +360,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
       .filter((o): o is CanvasObject => !!o)
       .map((o) => ({ id: o.id, x: o.x, y: o.y }));
 
+    setDragging(true);
     dragRef.current = {
       mode,
       pointerId,
@@ -538,6 +559,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const endDrag = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (dragRef.current && dragRef.current.pointerId === e.pointerId) {
       dragRef.current = null;
+      setDragging(false);
       commitTransform();
     }
   };
@@ -545,6 +567,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const cancelDrag = () => {
     if (dragRef.current) {
       dragRef.current = null;
+      setDragging(false);
       commitTransform();
     }
   };
@@ -561,7 +584,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   return (
     <div
       ref={containerRef}
-      className="flex-1 bg-slate-900 flex items-center justify-center overflow-hidden"
+      className="flex-1 editor-surface flex items-center justify-center overflow-hidden"
       style={{ touchAction: 'none' }}
     >
       <canvas

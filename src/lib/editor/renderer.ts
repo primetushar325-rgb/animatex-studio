@@ -1376,9 +1376,15 @@ function drawObject(
   ctx.save();
   ctx.translate(centerX, centerY);
   ctx.rotate(((obj.rotation + motion.rotation) * Math.PI) / 180);
+  if (obj.flipX) ctx.scale(-1, 1);
   ctx.globalAlpha = alpha;
   if (motion.scale !== 1) ctx.scale(motion.scale, motion.scale);
   ctx.translate(-centerX, -centerY);
+
+  // Day/night/weather variant tint for backgrounds & props
+  if (obj.variant && (obj.type === 'background' || obj.type === 'prop')) {
+    applyVariantTint(ctx, obj, w, h);
+  }
 
   const action = obj.action || 'idle';
   const pose = getActionPose(action, t);
@@ -1554,6 +1560,55 @@ function drawTextObject(ctx: CanvasRenderingContext2D, obj: CanvasObject) {
   ctx.shadowBlur = 0;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Day/night/weather variants (tint overlay + simple rain/clouds)
+// ---------------------------------------------------------------------------
+
+function applyVariantTint(
+  ctx: CanvasRenderingContext2D,
+  obj: CanvasObject,
+  w: number,
+  h: number
+) {
+  if (!obj.variant || obj.variant === 'day') return;
+  ctx.fillStyle =
+    obj.variant === 'night'
+      ? 'rgba(10,14,45,0.45)'
+      : obj.variant === 'sunset'
+      ? 'rgba(255,120,60,0.25)'
+      : 'rgba(90,110,150,0.30)';
+  ctx.fillRect(obj.x, obj.y, w, h);
+
+  if (obj.variant === 'rain') {
+    ctx.strokeStyle = 'rgba(190,210,255,0.5)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 60; i++) {
+      const rx = obj.x + ((i * 53) % w);
+      const ry = obj.y + ((i * 97) % h);
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 3, ry + 14);
+      ctx.stroke();
+    }
+  } else if (obj.variant === 'cloudy') {
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.arc(obj.x + ((i * 211) % w), obj.y + ((i * 137) % (h * 0.4)), 22, 0, TAU);
+      ctx.arc(obj.x + ((i * 211) % w) + 26, obj.y + ((i * 137) % (h * 0.4)) + 6, 18, 0, TAU);
+      ctx.fill();
+    }
+  } else if (obj.variant === 'night') {
+    // stars
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    for (let i = 0; i < 30; i++) {
+      const sx = obj.x + ((i * 173) % w);
+      const sy = obj.y + ((i * 89) % (h * 0.5));
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

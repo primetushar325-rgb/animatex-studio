@@ -3,179 +3,160 @@
 import { useEffect, useRef } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 
-interface AnalyserEntry {
-  analyser: AnalyserNode;
-  data: Uint8Array<ArrayBuffer>;
-  audio: HTMLAudioElement;
-}
-
 /**
- * Plays audio clips (voice / music / sfx) in sync with the timeline,
- * and computes a live lip-sync level (0..1) from the audio amplitude so
- * 'talk' characters move their mouths with the voice.
- * Renders nothing — just a hidden engine.
+ * Plays audio clips (voice / music / sfx) in sync with the timeline and
+ * computes a live lip-sync level (0..1) for "talk" characters.
+ *
+ * Implemented as ONE rAF loop that reads the store via getState() — no React
+ * effect churn per frame, and it never restarts when the scene changes
+ * (fixes audio/video playback glitches).
  */
 export function AudioPlaybackEngine() {
   const elsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const analysersRef = useRef<Map<string, AnalyserEntry>>(new Map());
+  const analysersRef = useRef<Map<string, AnalyserNode>>(new Map());
   const audioCtxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const { clips, audioClips, currentTime, isPlaying, currentSceneId, scenes, setLipSyncLevel } =
-    useEditorStore();
+  // ---------------------------------------------------------------------------
+  // analyser helpers
+  // ---------------------------------------------------------------------------
 
-  const scene = scenes.find((s) => s.id === currentSceneId);
-  const sceneDuration = scene?.duration || 5000;
+  const getCtx = () => {
+    if (audioCtxRef.current) return audioCtxRef.current;
+    const AC =
+      typeof window !== 'undefined'
+        ? window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        : undefined;
+    if (!AC) return null;
+    const ctx = new AC();
+    audioCtxRef.current = ctx;
+    return ctx;
+  };
 
-  // get or create an analyser for an audio element
-  const getAnalyser = (clipId: string, el: HTMLAudioElement) => {
-    const existing = analysersRef.current.get(clipId);
-    if (existing) return existing;
-
-    let ctx = audioCtxRef.current;
-    if (!ctx) {
-      const AC =
-        typeof window !== 'undefined'
-          ? window.AudioContext ||
-            (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-          : undefined;
-      if (!AC) return null;
-      ctx = new AC();
-      audioCtxRef.current = ctx;
-    }
-    if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
-
+  const ensureAnalyser = (clipId: string, el: HTMLAudioElement) => {
+    if (analysersRef.current.has(clipId)) return analysersRef.current.get(clipId)!;
+    const ctx = getCtx();
+    if (!ctx) return null;
     try {
       const source = ctx.createMediaElementSource(el);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.55;
+      analyser.smoothingTimeConstant = 0.6;
       source.connect(analyser);
       analyser.connect(ctx.destination);
-      const entry: AnalyserEntry = {
-        analyser,
-        data: new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount)),
-        audio: el,
-      };
-      analysersRef.current.set(clipId, entry);
-      return entry;
+      analysersRef.current.set(clipId, analyser);
+      return analyser;
     } catch {
-      return null; // element already connected elsewhere — skip analysis for it
+      return null; // element already connected to another source
     }
   };
 
-  // cleanup on unmount
+  // ---------------------------------------------------------------------------
+  // single loop
+  // ---------------------------------------------------------------------------
+
   useEffect(() => {
     const els = elsRef.current;
     const analysers = analysersRef.current;
+
+    const stopAll = () => {
+      elsRef.current.forEach((el) => {
+        el.pause();
+        el.currentTime = 0;
+      });
+    };
+
+    const tick = () => {
+      const st = useEditorStore.getState();
+
+      if (!st.isPlaying) {
+        stopAll();
+        if (st.lipSyncLevel !== 0) st.setLipSyncLevel(0);
+        rafRef.current = null;
+        return;
+      }
+
+      const scene = st.scenes.find((s) => s.id === st.currentSceneId);
+      const sceneDuration = scene?.duration || 5000;
+      const activeClips = st.clips.filter((c) => c.sceneId === st.currentSceneId);
+      const t = st.currentTime;
+
+      let maxLevel = 0;
+
+      for (const clip of activeClips) {
+        const audio = st.audioClips.find((a) => a.id === clip.assetId);
+        if (!audio || !audio.fileUrl) continue;
+
+        let el = elsRef.current.get(clip.id);
+        if (!el) {
+          el = new Audio();
+          el.preload = 'auto';
+          elsRef.current.set(clip.id, el);
+        }
+        if (el.src !== audio.fileUrl) {
+          el.src = audio.fileUrl;
+          analysersRef.current.delete(clip.id);
+        }
+
+        try {
+          if (t >= clip.startTime && t < clip.endTime) {
+            const localT = (t - clip.startTime) / 1000;
+            const drift = Math.abs(el.currentTime - localT);
+            if (el.paused || drift > 0.35) {
+              el.currentTime = localT;
+              void el.play().catch(() => undefined);
+            }
+            const analyser = ensureAnalyser(clip.id, el);
+            if (analyser) {
+              const data = new Uint8Array(analyser.frequencyBinCount);
+              analyser.getByteTimeDomainData(data);
+              let sum = 0;
+              for (let i = 0; i < data.length; i++) {
+                const v = (data[i] - 128) / 128;
+                sum += v * v;
+              }
+              maxLevel = Math.max(maxLevel, Math.sqrt(sum / data.length));
+            }
+          } else if (!el.paused) {
+            el.pause();
+            el.currentTime = 0;
+          }
+        } catch {
+          // ignore per-clip errors
+        }
+      }
+
+      // update lip-sync level (only meaningful when something is playing)
+      const level = maxLevel > 0.015 ? Math.min(1, (maxLevel - 0.02) * 2.6) : 0;
+      if (Math.abs(st.lipSyncLevel - level) > 0.012) st.setLipSyncLevel(level);
+
+      // stop everything at the very end of the scene
+      if (t >= sceneDuration) {
+        stopAll();
+        if (st.lipSyncLevel !== 0) st.setLipSyncLevel(0);
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+
     return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
       els.forEach((el) => {
         el.pause();
         el.src = '';
       });
       els.clear();
       analysers.clear();
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       const ctx = audioCtxRef.current;
       if (ctx) void ctx.close().catch(() => undefined);
       audioCtxRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // lip-sync sampling loop while playing
-  useEffect(() => {
-    if (!isPlaying) {
-      setLipSyncLevel(0);
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      return;
-    }
-
-    const sample = () => {
-      let maxLevel = 0;
-      analysersRef.current.forEach((entry) => {
-        try {
-          if (entry.audio.paused) return;
-          entry.analyser.getByteTimeDomainData(entry.data);
-          let sum = 0;
-          for (let i = 0; i < entry.data.length; i++) {
-            const v = (entry.data[i] - 128) / 128;
-            sum += v * v;
-          }
-          const rms = Math.sqrt(sum / entry.data.length);
-          maxLevel = Math.max(maxLevel, rms);
-        } catch {
-          // ignore
-        }
-      });
-      // scale: quiet speech ~0.05, loud ~0.5 → 0..1
-      const level = Math.min(1, Math.max(0, (maxLevel - 0.03) * 2.6));
-      setLipSyncLevel(level);
-      rafRef.current = requestAnimationFrame(sample);
-    };
-
-    rafRef.current = requestAnimationFrame(sample);
-
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    };
-  }, [isPlaying, setLipSyncLevel]);
-
-  // playback sync
-  useEffect(() => {
-    if (!isPlaying) {
-      elsRef.current.forEach((el) => {
-        el.pause();
-        el.currentTime = 0;
-      });
-      return;
-    }
-
-    const activeClips = clips.filter((c) => c.sceneId === currentSceneId);
-    const t = currentTime;
-
-    for (const clip of activeClips) {
-      const audio = audioClips.find((a) => a.id === clip.assetId);
-      if (!audio || !audio.fileUrl) continue;
-
-      let el = elsRef.current.get(clip.id);
-      if (!el) {
-        el = new Audio();
-        el.preload = 'auto';
-        elsRef.current.set(clip.id, el);
-      }
-      if (el.src !== audio.fileUrl) {
-        el.src = audio.fileUrl;
-        analysersRef.current.delete(clip.id); // force re-create analyser for new source
-      }
-      getAnalyser(clip.id, el);
-
-      try {
-        if (t >= clip.startTime && t < clip.endTime) {
-          const localT = t - clip.startTime;
-          const drift = Math.abs(el.currentTime - localT / 1000);
-          if (el.paused || drift > 0.35) {
-            el.currentTime = localT / 1000;
-            void el.play().catch(() => undefined);
-          }
-        } else {
-          if (!el.paused) el.pause();
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (currentTime >= sceneDuration) {
-      elsRef.current.forEach((el) => {
-        el.pause();
-        el.currentTime = 0;
-      });
-    }
-  }, [isPlaying, currentTime, clips, audioClips, currentSceneId, sceneDuration]);
 
   return null;
 }

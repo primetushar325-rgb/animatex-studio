@@ -5,6 +5,7 @@ import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
 import { saveAssetBlob } from '@/lib/storage/indexeddb';
 import { v4 as uuidv4 } from 'uuid';
+import { Mic, Pause, Play, Square, Trash2, RotateCcw, Plus } from 'lucide-react';
 
 interface VoiceRecorderProps {
   isOpen: boolean;
@@ -190,11 +191,11 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"
+        className="editor-panel border border-[var(--editor-border)] rounded-2xl w-full max-w-sm p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold">🎙️ Voice Recorder</h2>
+          <h2 className="text-xl font-bold text-white"><Mic size={20} /> Voice Recorder</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             ✕
           </button>
@@ -249,7 +250,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
                   onClick={startRecording}
                   className="w-16 h-16 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white text-2xl shadow-lg transition-colors"
                 >
-                  🎙️
+                  <Mic size={20} />
                 </button>
               )}
 
@@ -260,21 +261,21 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
                       onClick={resumeRecording}
                       className="w-14 h-14 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center text-white text-xl shadow-lg"
                     >
-                      ▶️
+                      <Play size={20} />
                     </button>
                   ) : (
                     <button
                       onClick={pauseRecording}
                       className="w-14 h-14 bg-yellow-500 hover:bg-yellow-600 rounded-full flex items-center justify-center text-white text-xl shadow-lg"
                     >
-                      ⏸️
+                      <Pause size={20} />
                     </button>
                   )}
                   <button
                     onClick={stopRecording}
                     className="w-16 h-16 bg-gray-800 hover:bg-gray-900 rounded-full flex items-center justify-center text-white text-2xl shadow-lg"
                   >
-                    ⏹️
+                    <Square size={20} />
                   </button>
                 </>
               )}
@@ -286,14 +287,14 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
                     className="w-14 h-14 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center text-xl"
                     title="Discard"
                   >
-                    🗑️
+                    <Trash2 size={20} />
                   </button>
                   <button
                     onClick={startRecording}
                     className="w-14 h-14 bg-yellow-500 hover:bg-yellow-600 rounded-full flex items-center justify-center text-white text-xl shadow-lg"
                     title="Record again"
                   >
-                    🔄
+                    <RotateCcw size={20} />
                   </button>
                   <button
                     onClick={useRecording}
@@ -306,7 +307,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
                     ) : saveState === 'done' ? (
                       '✓'
                     ) : (
-                      '+'
+                      '<Plus size={20} />'
                     )}
                   </button>
                 </>
@@ -317,7 +318,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
             <p className="text-center text-sm text-gray-500 mt-6">
               {!isRecording && !audioUrl && 'Tap to start recording'}
               {isRecording && 'Tap stop when finished'}
-              {audioUrl && 'Preview, then tap + to add to the timeline'}
+              {audioUrl && 'Preview, then tap <Plus size={20} /> to add to the timeline'}
             </p>
           </>
         )}

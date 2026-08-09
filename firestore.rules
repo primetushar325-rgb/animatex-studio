@@ -50,6 +50,14 @@ service cloud.firestore {
           allow read, write: if isOwner(userId);
         }
       }
+
+      // Character library — each user manages their own character PNG collection
+      match /characterLibrary/{characterId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
     }
     
     // Activity logs - users can read their own, admins can read all
