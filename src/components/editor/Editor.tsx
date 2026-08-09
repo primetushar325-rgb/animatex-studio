@@ -13,6 +13,8 @@ import { VoiceRecorder } from './VoiceRecorder';
 import { ExportModal } from './ExportModal';
 import { AudioPlaybackEngine } from './AudioPlaybackEngine';
 import { saveDraft, getDraft } from '@/lib/storage/indexeddb';
+import { drawSceneContent } from '@/lib/editor/renderer';
+import { generateStory } from '@/lib/editor/storyGenerator';
 import { Logo } from '@/components/brand/Logo';
 import type { CanvasObject } from '@/types/animation';
 
@@ -31,6 +33,8 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
   const [showExportModal, setShowExportModal] = useState(autoExport);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [textDraft, setTextDraft] = useState({ content: '', fontSize: 48, color: '#111827', weight: 'normal' as 'normal' | 'bold' });
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
   const isSavingRef = useRef(false);
 
   const {
@@ -73,6 +77,31 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
 
   // Auto-save (debounced). Reads the project from the store directly so that
   // saving (which updates currentProject) never retriggers another save.
+  // Render a small PNG thumbnail of the first scene for the project card
+  const generateThumbnail = useCallback((): string | undefined => {
+    try {
+      const st = useEditorStore.getState();
+      const scene0 = st.scenes[0];
+      if (!scene0) return undefined;
+      const objs = st.canvasObjects.filter((o) => o.sceneId === scene0.id);
+      const project = useProjectStore.getState().currentProject;
+      const pw = project?.width || 1080;
+      const ph = project?.height || 1920;
+      const canvas = document.createElement('canvas');
+      const w = 320;
+      const h = Math.max(1, Math.round((w * ph) / pw));
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return undefined;
+      ctx.scale(w / pw, h / ph);
+      drawSceneContent(ctx, objs, scene0, 0, 0, pw, ph);
+      return canvas.toDataURL('image/jpeg', 0.65);
+    } catch {
+      return undefined;
+    }
+  }, []);
+
   const handleAutoSave = useCallback(async () => {
     if (isSavingRef.current) return;
     if (!useProjectStore.getState().currentProject) return;
@@ -80,14 +109,16 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     try {
       const editorState = getEditorState();
       await saveDraft(projectId, editorState);
+      const thumbnail = generateThumbnail();
       await saveProject({
         sceneCount: scenes.length,
         duration: scenes.reduce((total, scene) => total + scene.duration, 0),
+        ...(thumbnail ? { thumbnail } : {}),
       });
     } finally {
       isSavingRef.current = false;
     }
-  }, [projectId, saveProject, scenes, getEditorState]);
+  }, [projectId, saveProject, scenes, getEditorState, generateThumbnail]);
 
   useEffect(() => {
     if (!useProjectStore.getState().currentProject) return;
@@ -215,6 +246,157 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     await handleAutoSave();
     router.push('/studio');
   };
+
+  // ---------------------------------------------------------------------------
+  // Smart (offline) story generation — no external AI API needed
+  // ---------------------------------------------------------------------------
+
+  const applyStoryToEditor = (prompt: string) => {
+    const story = generateStory(prompt);
+    if (story.length === 0) {
+      setAiStatus('কিছু লিখুন আগে — যেমন: "একটি ছেলে গ্রামের রাস্তায় হাঁটছিল"');
+      return;
+    }
+
+    const st = useEditorStore.getState();
+    const project = useProjectStore.getState().currentProject;
+    const pw = project?.width || 1080;
+    const ph = project?.height || 1920;
+
+    let firstSceneId: string | null = null;
+
+    for (const s of story) {
+      st.addScene(s.name);
+      const sceneId = useEditorStore.getState().currentSceneId;
+      if (!sceneId) continue;
+      if (!firstSceneId) firstSceneId = sceneId;
+      st.setCurrentScene(sceneId);
+      st.updateScene(sceneId, { backgroundColor: s.bgColor });
+
+      const tr = useEditorStore.getState().tracks;
+      const bgTrack = tr.find((t) => t.sceneId === sceneId && t.type === 'background');
+      const charTrack = tr.find((t) => t.sceneId === sceneId && t.type === 'character');
+      const propTrack = tr.find((t) => t.sceneId === sceneId && t.type === 'prop');
+
+      if (bgTrack) {
+        const assetId = newId();
+        st.addCanvasObject({
+          type: 'background',
+          x: 0,
+          y: 0,
+          width: pw,
+          height: ph,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+          opacity: 1,
+          zIndex: 0,
+          assetId,
+          name: s.background,
+        });
+        st.addClip(bgTrack.id, assetId, 0, 5000);
+      }
+
+      const n = s.characters.length;
+      s.characters.forEach((c, i) => {
+        if (!charTrack) return;
+        const assetId = newId();
+        const w = 200;
+        const h = 300;
+        st.addCanvasObject({
+          type: 'character',
+          x: (pw * (i + 1)) / (n + 1) - w / 2,
+          y: ph * 0.55 - h / 2,
+          width: w,
+          height: h,
+          rotation: 0,
+          scaleX: 1.1,
+          scaleY: 1.1,
+          opacity: 1,
+          zIndex: 10,
+          assetId,
+          name: c.name,
+          characterType: c.type,
+          expression: c.expression,
+          action: c.action,
+        });
+        st.addClip(charTrack.id, assetId, 0, 5000);
+      });
+
+      if (propTrack) {
+        s.props.slice(0, 3).forEach((p, i) => {
+          const assetId = newId();
+          st.addCanvasObject({
+            type: 'prop',
+            x: pw * 0.75 + i * 60,
+            y: ph * 0.62,
+            width: 100,
+            height: 100,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
+            opacity: 1,
+            zIndex: 5,
+            assetId,
+            name: p,
+          });
+          st.addClip(propTrack.id, assetId, 0, 5000);
+        });
+      }
+    }
+
+    if (firstSceneId) {
+      useEditorStore.getState().setCurrentScene(firstSceneId);
+    }
+    setAiStatus(`✅ ${story.length}টা scene তৈরি হয়েছে! দেখে নাও।`);
+  };
+
+  const handleGenerateScenes = () => {
+    applyStoryToEditor(aiPrompt);
+  };
+
+  const handleRandomCharacter = () => {
+    const types = [
+      'boy', 'girl', 'child', 'man', 'woman', 'old-man', 'old-woman',
+      'dog', 'cat', 'bird', 'cow', 'goat',
+    ] as const;
+    const type = types[Math.floor(Math.random() * types.length)];
+    const st = useEditorStore.getState();
+    const project = useProjectStore.getState().currentProject;
+    const pw = project?.width || 1080;
+    const ph = project?.height || 1920;
+    const sceneId = st.currentSceneId;
+    const charTrack = st.tracks.find((t) => t.sceneId === sceneId && t.type === 'character');
+    if (!charTrack || !sceneId) return;
+
+    const assetId = newId();
+    const w = 200;
+    const h = 300;
+    st.addCanvasObject({
+      type: 'character',
+      x: pw * 0.3 + Math.random() * pw * 0.3 - w / 2,
+      y: ph * 0.55 - h / 2,
+      width: w,
+      height: h,
+      rotation: 0,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      opacity: 1,
+      zIndex: 10,
+      assetId,
+      name: type,
+      characterType: type,
+      expression: 'happy',
+      action: 'idle',
+    });
+    st.addClip(charTrack.id, assetId, 0, 3000);
+    setAiStatus(`🎭 "${type}" character যোগ হয়েছে।`);
+  };
+
+  const newId = (): string =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   if (!currentProject) {
     return (
@@ -414,22 +596,37 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
                   Describe your story
                 </label>
                 <textarea
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
                   placeholder="একজন ছেলে গ্রামের রাস্তায় হাঁটছিল। হঠাৎ একটি কুকুর তার সামনে আসে।"
                   className="w-full h-32 px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
 
               <div className="flex gap-2">
-                <button className="flex-1 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all">
-                  Generate Scenes
+                <button
+                  onClick={handleGenerateScenes}
+                  className="flex-1 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all"
+                >
+                  ✨ Smart Generate
                 </button>
-                <button className="flex-1 py-2 bg-slate-700 text-white font-medium rounded-lg hover:bg-slate-600 transition-colors">
-                  AI Character
+                <button
+                  onClick={handleRandomCharacter}
+                  className="flex-1 py-2 bg-slate-700 text-white font-medium rounded-lg hover:bg-slate-600 transition-colors"
+                >
+                  🎭 Random Character
                 </button>
               </div>
 
+              {aiStatus && (
+                <p className="text-xs text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded-lg px-3 py-2">
+                  {aiStatus}
+                </p>
+              )}
+
               <p className="text-xs text-slate-500 text-center">
-                AI features require API configuration. Results will be editable.
+                ⚡ অফলাইন স্মার্ট জেনারেটর — Bangla/English বাক্য থেকে scene, character, action,
+                background নিজে থেকেই বানিয়ে দেয় (কোনো API লাগে না)।
               </p>
             </div>
           </div>

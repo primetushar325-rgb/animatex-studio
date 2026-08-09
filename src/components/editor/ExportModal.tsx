@@ -3,8 +3,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
-import { drawSceneContent, preloadImages } from '@/lib/editor/renderer';
+import {
+  drawSceneContent,
+  preloadImages,
+  transitionProgress,
+  mixColors,
+} from '@/lib/editor/renderer';
+import { applyKeyframes } from '@/lib/editor/keyframes';
 import { encodeGIF } from '@/lib/editor/gif';
+import type { Scene } from '@/types/animation';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -34,7 +41,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const chunksRef = useRef<Blob[]>([]);
   const frameTokenRef = useRef(0);
 
-  const { scenes, canvasObjects } = useEditorStore();
+  const { scenes, canvasObjects, clips } = useEditorStore();
   const { currentProject } = useProjectStore();
 
   const projectW = currentProject?.width || 1080;
@@ -123,15 +130,58 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
       timeInScene = Math.min(frameTime - accumulated, scenes[i].duration);
     }
     const scene = scenes[sceneIndex];
-    const sceneObjects = canvasObjects.filter((o) => o.sceneId === scene?.id);
+    const next = scenes[sceneIndex + 1];
+    const sceneObjects = canvasObjects
+      .filter((o) => o.sceneId === scene?.id)
+      .map((o) => applyKeyframes(o, clips, timeInScene, scene?.id));
+    const nextObjects = next
+      ? canvasObjects.filter((o) => o.sceneId === next.id).map((o) => applyKeyframes(o, clips, 0, next.id))
+      : [];
 
-    ctx.save();
-    ctx.scale(width / projectW, height / projectH);
-    drawSceneContent(ctx, sceneObjects, scene, timeInScene, timeInScene, projectW, projectH, {
+    const baseOpts = {
       playback: true,
       sceneDuration: scene?.duration,
       watermark: { text: watermarkText, enabled: includeWatermark },
-    });
+    };
+
+    ctx.save();
+    ctx.scale(width / projectW, height / projectH);
+
+    // Scene transition (crossfade / slide / zoom) into the next scene
+    const tp = scene
+      ? transitionProgress(timeInScene, scene.duration, scene.transition.duration)
+      : 0;
+    const type = scene?.transition.type || 'none';
+    const doTransition = tp > 0 && tp < 1 && next && type !== 'none';
+
+    if (doTransition) {
+      // draw current scene with blended background
+      const blendedScene: Scene | undefined = scene
+        ? { ...scene, backgroundColor: mixColors(scene.backgroundColor, next!.backgroundColor, tp) }
+        : scene;
+      drawSceneContent(ctx, sceneObjects, blendedScene, timeInScene, timeInScene, projectW, projectH, baseOpts);
+
+      // draw the next scene over it
+      ctx.save();
+      if (type === 'slide') {
+        ctx.translate(projectW * (1 - tp), 0);
+      } else if (type === 'zoom') {
+        const s = 0.86 + 0.14 * tp;
+        ctx.translate(projectW / 2, projectH / 2);
+        ctx.scale(s, s);
+        ctx.translate(-projectW / 2, -projectH / 2);
+      } else {
+        ctx.globalAlpha = tp;
+      }
+      drawSceneContent(ctx, nextObjects, next, 0, timeInScene, projectW, projectH, {
+        playback: true,
+        sceneDuration: next.duration,
+      });
+      ctx.restore();
+    } else {
+      drawSceneContent(ctx, sceneObjects, scene, timeInScene, timeInScene, projectW, projectH, baseOpts);
+    }
+
     ctx.restore();
   };
 

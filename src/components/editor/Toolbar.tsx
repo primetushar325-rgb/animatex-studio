@@ -3,6 +3,7 @@
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
 import { MOTION_PRESETS } from '@/lib/editor/renderer';
+import { objectToKeyframeProperties, findClipForObject } from '@/lib/editor/keyframes';
 import type { MotionPreset } from '@/types/animation';
 
 interface ToolbarProps {
@@ -17,22 +18,27 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
     activeTool,
     setTool,
     selectedObjectId,
+    selectedObjectIds,
     deleteCanvasObject,
+    deleteCanvasObjects,
     duplicateCanvasObject,
     undo,
     redo,
     history,
     canvasObjects,
+    clips,
     updateCanvasObject,
     bringForward,
     sendBackward,
     currentTime,
+    addKeyframe,
   } = useEditorStore();
 
   const { saveStatus, currentProject } = useProjectStore();
 
   const selectedObject = canvasObjects.find((o) => o.id === selectedObjectId);
   const isTextObject = selectedObject?.type === 'text';
+  const multiCount = selectedObjectIds.length;
 
   const tools = [
     { id: 'select', icon: '👆', label: 'Select / Move' },
@@ -41,14 +47,11 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
   ] as const;
 
   const handleTool = (id: (typeof tools)[number]['id'] | 'text') => {
-    if (id === 'text') {
-      onAddText?.();
-    } else {
-      setTool(id);
-    }
+    if (id === 'text') onAddText?.();
+    else setTool(id);
   };
 
-  const setProp = (patch: Record<string, number>) => {
+  const setProp = (patch: Record<string, number | string>) => {
     if (!selectedObject) return;
     updateCanvasObject(selectedObject.id, patch);
   };
@@ -61,20 +64,25 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
     });
   };
 
+  const handleAddKeyframe = () => {
+    if (!selectedObject || !selectedObject.assetId) return;
+    const clip = findClipForObject(clips, selectedObject, selectedObject.sceneId);
+    if (!clip) return;
+    const clipTime = currentTime - clip.startTime;
+    if (clipTime < 0) return;
+    addKeyframe(clip.id, clipTime, objectToKeyframeProperties(selectedObject));
+  };
+
   const alignCenterH = () => {
     if (!selectedObject || !currentProject) return;
     const w = selectedObject.width * selectedObject.scaleX;
-    updateCanvasObject(selectedObject.id, {
-      x: (currentProject.width - w) / 2,
-    });
+    updateCanvasObject(selectedObject.id, { x: (currentProject.width - w) / 2 });
   };
 
   const alignCenterV = () => {
     if (!selectedObject || !currentProject) return;
     const h = selectedObject.height * selectedObject.scaleY;
-    updateCanvasObject(selectedObject.id, {
-      y: (currentProject.height - h) / 2,
-    });
+    updateCanvasObject(selectedObject.id, { y: (currentProject.height - h) / 2 });
   };
 
   const displayWidth = selectedObject ? Math.round(selectedObject.width * selectedObject.scaleX) : 0;
@@ -87,7 +95,7 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
     <div className="bg-white border-b border-gray-200">
       {/* Main toolbar row */}
       <div className="px-4 py-2 flex items-center gap-2 sm:gap-3 overflow-x-auto">
-        {/* Back Button */}
+        {/* Back */}
         <button
           onClick={onBack}
           className="flex items-center gap-1 text-gray-600 hover:text-gray-900 whitespace-nowrap"
@@ -132,7 +140,7 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
           <button
             onClick={undo}
             disabled={history.past.length === 0}
-            className={`w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed`}
+            className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Undo (Ctrl+Z)"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -151,7 +159,7 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
           </button>
         </div>
 
-        {/* Selected object actions */}
+        {/* Selected actions */}
         {selectedObjectId && (
           <>
             <div className="h-6 w-px bg-gray-200" />
@@ -159,9 +167,11 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
               ⧉
             </button>
             <button
-              onClick={() => deleteCanvasObject(selectedObjectId)}
+              onClick={() =>
+                multiCount > 1 ? deleteCanvasObjects(selectedObjectIds) : deleteCanvasObject(selectedObjectId)
+              }
               className={`${iconBtn()} hover:bg-red-100 text-red-600`}
-              title="Delete (Del)"
+              title={`Delete ${multiCount > 1 ? `${multiCount} objects` : '(Del)'}`}
             >
               🗑️
             </button>
@@ -171,13 +181,27 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
             <button onClick={() => selectedObject && sendBackward(selectedObject.id)} className={iconBtn()} title="Send Backward">
               ⬇️
             </button>
+            {selectedObject?.assetId && (
+              <button
+                onClick={handleAddKeyframe}
+                className="flex items-center gap-1 px-2 py-1.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded-lg text-xs font-semibold"
+                title="Add keyframe at playhead"
+              >
+                ◆ Keyframe
+              </button>
+            )}
           </>
         )}
 
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Manual save */}
+        {multiCount > 1 && (
+          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full whitespace-nowrap">
+            {multiCount} selected
+          </span>
+        )}
+
         <button
           onClick={onSave}
           className="flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm transition-colors whitespace-nowrap"
@@ -209,7 +233,7 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
         </div>
       </div>
 
-      {/* Properties strip (visible when an object is selected) */}
+      {/* Properties strip */}
       {selectedObject && (
         <div className="px-4 py-2 border-t border-gray-100 flex items-center gap-3 overflow-x-auto text-sm bg-gray-50">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
@@ -311,13 +335,69 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps)
             </select>
           </label>
 
+          {/* Text style controls */}
           {isTextObject && (
-            <button
-              onClick={onEditText}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg whitespace-nowrap"
-            >
-              ✏️ Edit Text
-            </button>
+            <>
+              <label className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-gray-500 text-xs">Outline</span>
+                <input
+                  type="color"
+                  value={selectedObject.strokeColor || '#000000'}
+                  onChange={(e) => setProp({ strokeColor: e.target.value, strokeWidth: selectedObject.strokeWidth || 3 })}
+                  className="w-7 h-7 rounded border border-gray-300 cursor-pointer"
+                  title="Outline color"
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="8"
+                  value={selectedObject.strokeWidth || 0}
+                  onChange={(e) =>
+                    setProp({
+                      strokeWidth: parseInt(e.target.value, 10),
+                      strokeColor: selectedObject.strokeColor || '#000000',
+                    })
+                  }
+                  className="w-14"
+                  title="Outline width"
+                />
+                {!selectedObject.strokeColor && (
+                  <span className="text-[10px] text-gray-400">off</span>
+                )}
+              </label>
+
+              <label className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-gray-500 text-xs">Shadow</span>
+                <input
+                  type="color"
+                  value={selectedObject.shadowColor || '#000000'}
+                  onChange={(e) => setProp({ shadowColor: e.target.value, shadowBlur: selectedObject.shadowBlur || 8 })}
+                  className="w-7 h-7 rounded border border-gray-300 cursor-pointer"
+                  title="Shadow color"
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="24"
+                  value={selectedObject.shadowBlur || 0}
+                  onChange={(e) =>
+                    setProp({
+                      shadowBlur: parseInt(e.target.value, 10),
+                      shadowColor: selectedObject.shadowColor || '#000000',
+                    })
+                  }
+                  className="w-14"
+                  title="Shadow blur"
+                />
+              </label>
+
+              <button
+                onClick={onEditText}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg whitespace-nowrap"
+              >
+                ✏️ Edit Text
+              </button>
+            </>
           )}
         </div>
       )}

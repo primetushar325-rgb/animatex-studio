@@ -1349,6 +1349,8 @@ export interface DrawObjectOptions {
   playback?: boolean;
   /** Scene duration in ms (needed for fade-out). */
   sceneDuration?: number;
+  /** Live lip-sync level 0..1 — drives mouth of 'talk' characters. */
+  lipSyncLevel?: number;
 }
 
 function drawObject(
@@ -1380,6 +1382,11 @@ function drawObject(
 
   const action = obj.action || 'idle';
   const pose = getActionPose(action, t);
+
+  // Live lip-sync: 'talk' characters open their mouth with the audio level
+  if (action === 'talk' && opts.lipSyncLevel !== undefined) {
+    pose.mouthOpen = clamp(0.15 + opts.lipSyncLevel * 0.85, 0, 1);
+  }
 
   // Custom uploaded image wins over procedural drawing
   const img = getCachedImage(obj.imageUrl);
@@ -1505,6 +1512,14 @@ function drawTextObject(ctx: CanvasRenderingContext2D, obj: CanvasObject) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
+  // shadow
+  if (obj.shadowColor && (obj.shadowBlur || 0) > 0) {
+    ctx.shadowColor = obj.shadowColor;
+    ctx.shadowBlur = obj.shadowBlur || 8;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+  }
+
   const words = obj.content.split(/\s+/);
   const lines: string[] = [];
   let current = '';
@@ -1520,9 +1535,59 @@ function drawTextObject(ctx: CanvasRenderingContext2D, obj: CanvasObject) {
   if (current) lines.push(current);
 
   const lineHeight = fontSize * 1.25;
-  lines.forEach((line, i) => {
-    ctx.fillText(line, obj.x, obj.y + i * lineHeight);
-  });
+
+  // outline
+  if (obj.strokeColor && (obj.strokeWidth || 0) > 0) {
+    ctx.strokeStyle = obj.strokeColor;
+    ctx.lineWidth = obj.strokeWidth || 2;
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < lines.length; i++) {
+      ctx.strokeText(lines[i], obj.x, obj.y + i * lineHeight);
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], obj.x, obj.y + i * lineHeight);
+  }
+
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Scene transitions
+// ---------------------------------------------------------------------------
+
+export function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const num = parseInt(h, 16);
+  if (Number.isNaN(num)) return { r: 255, g: 255, b: 255 };
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+export function mixColors(hexA: string, hexB: string, p: number): string {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  const t = Math.min(1, Math.max(0, p));
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const bl = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+/** Progress 0..1 of the transition window near the end of a scene (0 = no transition). */
+export function transitionProgress(
+  timeInScene: number,
+  sceneDuration: number,
+  transitionDuration: number
+): number {
+  if (transitionDuration <= 0) return 0;
+  const start = sceneDuration - transitionDuration;
+  if (timeInScene < start) return 0;
+  return Math.min(1, (timeInScene - start) / transitionDuration);
 }
 
 // ---------------------------------------------------------------------------

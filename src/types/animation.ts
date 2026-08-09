@@ -200,6 +200,12 @@ export interface CanvasObject {
   fontSize?: number;
   fontColor?: string;
   fontWeight?: string;
+  /** Text outline */
+  strokeColor?: string;
+  strokeWidth?: number;
+  /** Text shadow */
+  shadowColor?: string;
+  shadowBlur?: number;
   /** Entrance / exit motion preset, animated during playback */
   motion?: MotionPreset;
   /** Scene-time (ms) when the motion should start (default 0) */

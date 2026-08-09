@@ -236,3 +236,22 @@ Another round of professional upgrades + bug fixes:
 - **WebM video** (best quality, desktop) — real characters/actions/images/text/watermark
 - **GIF** (universal, mobile gallery friendly)
 - **PNG** (current frame snapshot)
+
+---
+
+## 🆕 Premium Update #3 — The Big Free Feature Pack (2026-08)
+
+Eight professional features — all built in-house, zero paid APIs:
+
+1. **◆ Keyframe animation** — select an object, press `◆ Keyframe` in the toolbar or timeline at any playhead position, and move/scale/rotate the object later. Playback interpolates between keyframes with easing (linear / ease-in / ease-out / ease-in-out). Keyframes show as yellow diamonds on timeline clips. Works in export too.
+2. **▶️ Play all scenes** — the timeline now plays the entire scene sequence in a loop (not just the current scene), advancing scenes automatically.
+3. **🎬 Scene transitions** — fade / crossfade / slide / zoom between scenes, live in the editor and baked into video/GIF exports.
+4. **🖱️ Multi-select** — Shift/Ctrl-tap objects to select several at once, drag to move them together, delete or align as a group.
+5. **✒️ Text outline & shadow** — select a text object and use the Outline / Shadow color + width/blur sliders in the toolbar.
+6. **🖼️ Auto thumbnails** — project cards now show a real preview image of your first scene (auto-generated on save).
+7. **✨ Smart Story Generator (offline)** — type a Bangla/English sentence (e.g. "একটি ছেলে গ্রামের রাস্তায় হাঁটছিল") and it builds scenes with matched characters, backgrounds, actions and expressions — no AI API, works offline. Also a 🎭 Random Character button.
+8. **👄 Live lip-sync** — when a voice clip plays, any character set to the "talk" action opens and closes their mouth with the audio amplitude (WebAudio analyser, no API).
+
+### Extra polish
+- Object transform strip now includes motion, keyframes, text styles.
+- Duplicate (Ctrl+D), group delete, "N selected" indicator.

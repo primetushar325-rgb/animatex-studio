@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
 import {
@@ -8,7 +8,10 @@ import {
   drawSelectionOverlay,
   getSelectionHandles,
   getImage,
+  mixColors,
+  transitionProgress,
 } from '@/lib/editor/renderer';
+import { applyKeyframes } from '@/lib/editor/keyframes';
 import type { CanvasObject } from '@/types/animation';
 
 interface CanvasProps {
@@ -33,6 +36,7 @@ interface DragState {
   mode: DragMode;
   pointerId: number;
   start: Point;
+  objStarts: { id: string; x: number; y: number }[];
   objStart: {
     x: number;
     y: number;
@@ -59,8 +63,11 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
 
   const {
     canvasObjects,
+    clips,
     selectedObjectId,
+    selectedObjectIds,
     selectObject,
+    toggleMultiSelect,
     updateCanvasObject,
     commitTransform,
     activeTool,
@@ -70,14 +77,27 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     isPlaying,
     watermarkEnabled,
     watermarkText,
+    lipSyncLevel,
   } = useEditorStore();
 
   const { currentProject } = useProjectStore();
 
   const currentScene = scenes.find((s) => s.id === currentSceneId);
-  // Objects are scoped per scene
+  const sceneIndex = scenes.findIndex((s) => s.id === currentSceneId);
+  const nextScene = sceneIndex >= 0 ? scenes[sceneIndex + 1] : undefined;
+  const nextSceneObjects = useMemo(
+    () => (nextScene ? canvasObjects.filter((o) => o.sceneId === nextScene.id) : []),
+    [nextScene, canvasObjects]
+  );
+
+  // Objects scoped per scene
   const sceneObjects = canvasObjects.filter((o) => o.sceneId === currentSceneId);
   const selectedObject = sceneObjects.find((o) => o.id === selectedObjectId) || null;
+
+  // During playback: keyframe interpolation per object + lip-sync
+  const effectiveObjects = isPlaying
+    ? sceneObjects.map((o) => applyKeyframes(o, clips, currentTime, currentSceneId ?? undefined))
+    : sceneObjects;
 
   // -------------------------------------------------------------------------
   // Drawing
@@ -91,31 +111,94 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     if (!ctx) return;
 
     const t = isPlaying ? currentTime : 0;
+
+    // Scene transition live preview: near the end of a scene, blend into next
+    let bgOverride: string | undefined;
+    let slideOffset = 0;
+    if (isPlaying && currentScene && nextScene) {
+      const tp = transitionProgress(t, currentScene.duration, currentScene.transition.duration);
+      if (tp > 0) {
+        bgOverride = mixColors(
+          currentScene.backgroundColor,
+          nextScene.backgroundColor,
+          tp
+        );
+        if (currentScene.transition.type === 'slide') slideOffset = (1 - tp) * canvas.width * 0.35;
+      }
+    }
+
+    const drawOpts = {
+      playback: isPlaying,
+      sceneDuration: currentScene?.duration,
+      lipSyncLevel,
+      watermark: { text: watermarkText, enabled: watermarkEnabled },
+    };
+
+    // Draw current scene content
+    ctx.save();
+    if (slideOffset) ctx.translate(-slideOffset, 0);
     drawSceneContent(
       ctx,
-      sceneObjects,
-      currentScene,
+      effectiveObjects,
+      currentScene ? { ...currentScene, backgroundColor: bgOverride || currentScene.backgroundColor } : currentScene,
       t,
       animClockRef.current,
       canvas.width,
       canvas.height,
-      {
-        playback: isPlaying,
-        sceneDuration: currentScene?.duration,
-        watermark: { text: watermarkText, enabled: watermarkEnabled },
-      }
+      drawOpts
     );
+    ctx.restore();
 
-    // Selection overlay (always on top, outside rotation)
-    if (selectedObject) {
-      drawSelectionOverlay(ctx, selectedObject);
+    // Transition: slide the next scene in
+    if (isPlaying && currentScene && nextScene && currentScene.transition.type === 'slide') {
+      const tp = transitionProgress(t, currentScene.duration, currentScene.transition.duration);
+      if (tp > 0 && tp < 1) {
+        ctx.save();
+        ctx.translate(canvas.width * (1 - tp), 0);
+        drawSceneContent(ctx, nextSceneObjects, nextScene, 0, animClockRef.current, canvas.width, canvas.height, {
+          playback: true,
+          sceneDuration: nextScene.duration,
+          lipSyncLevel,
+        });
+        ctx.restore();
+      }
     }
-  }, [sceneObjects, selectedObject, currentScene, currentProject, isPlaying, currentTime, watermarkEnabled, watermarkText]);
 
-  // Animation loop — also advances the "life" clock for idle breathing
+    // Selection overlays (multi)
+    for (const o of sceneObjects) {
+      if (selectedObjectIds.includes(o.id)) {
+        if (o.id === selectedObjectId) {
+          drawSelectionOverlay(ctx, o);
+        } else {
+          // light dashed outline for secondary selections
+          ctx.save();
+          ctx.strokeStyle = 'rgba(59,130,246,0.55)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 5]);
+          ctx.strokeRect(o.x, o.y, o.width * o.scaleX, o.height * o.scaleY);
+          ctx.restore();
+        }
+      }
+    }
+  }, [
+    effectiveObjects,
+    nextSceneObjects,
+    sceneObjects,
+    selectedObjectIds,
+    selectedObjectId,
+    currentScene,
+    nextScene,
+    currentProject,
+    isPlaying,
+    currentTime,
+    watermarkEnabled,
+    watermarkText,
+    lipSyncLevel,
+  ]);
+
+  // Animation loop
   useEffect(() => {
     let animationId: number;
-
     const animate = (now: number) => {
       const delta = lastFrameRef.current ? now - lastFrameRef.current : 16;
       lastFrameRef.current = now;
@@ -123,20 +206,14 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
       draw();
       animationId = requestAnimationFrame(animate);
     };
-
     animationId = requestAnimationFrame(animate);
-
-    return () => {
-      cancelAnimationFrame(animationId);
-    };
+    return () => cancelAnimationFrame(animationId);
   }, [draw]);
 
-  // Load images for the current scene (custom uploads)
+  // Load images for the current scene
   useEffect(() => {
     sceneObjects.forEach((obj) => {
-      if (obj.imageUrl) {
-        getImage(obj.imageUrl).catch(() => null);
-      }
+      if (obj.imageUrl) getImage(obj.imageUrl).catch(() => null);
     });
   }, [sceneObjects]);
 
@@ -149,26 +226,21 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     const updateSize = () => {
       const containerRect = container.getBoundingClientRect();
       const aspectRatio = currentProject.width / currentProject.height;
-
       let width = containerRect.width;
       let height = width / aspectRatio;
-
       if (height > containerRect.height) {
         height = containerRect.height;
         width = height * aspectRatio;
       }
-
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       canvas.width = currentProject.width;
       canvas.height = currentProject.height;
-
       setScale(width / currentProject.width);
     };
 
     updateSize();
     window.addEventListener('resize', updateSize);
-
     return () => window.removeEventListener('resize', updateSize);
   }, [currentProject]);
 
@@ -195,7 +267,6 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
       for (const obj of sorted) {
         const w = obj.width * obj.scaleX;
         const h = obj.height * obj.scaleY;
-        // rotate hit-testing: rotate the point into object space
         const cx = obj.x + w / 2;
         const cy = obj.y + h / 2;
         const rad = (-obj.rotation * Math.PI) / 180;
@@ -203,12 +274,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
         const dy = y - cy;
         const lx = dx * Math.cos(rad) - dy * Math.sin(rad) + cx;
         const ly = dx * Math.sin(rad) + dy * Math.cos(rad) + cy;
-        if (
-          lx >= obj.x &&
-          lx <= obj.x + w &&
-          ly >= obj.y &&
-          ly <= obj.y + h
-        ) {
+        if (lx >= obj.x && lx <= obj.x + w && ly >= obj.y && ly <= obj.y + h) {
           return obj;
         }
       }
@@ -221,10 +287,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     (obj: CanvasObject, x: number, y: number): DragState['handle'] | 'rotate' | null => {
       const tol = HANDLE_HIT_PX / scale;
       const handles = getSelectionHandles(obj);
-
-      if (Math.hypot(x - handles.rotate.x, y - handles.rotate.y) <= tol + 4) {
-        return 'rotate';
-      }
+      if (Math.hypot(x - handles.rotate.x, y - handles.rotate.y) <= tol + 4) return 'rotate';
       for (const c of handles.corners) {
         if (Math.abs(x - c.x) <= tol && Math.abs(y - c.y) <= tol) return { id: c.id };
       }
@@ -258,7 +321,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   };
 
   // -------------------------------------------------------------------------
-  // Pointer handling (mouse + touch unified)
+  // Pointer handling
   // -------------------------------------------------------------------------
 
   const startDrag = (
@@ -269,10 +332,19 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     handle?: DragState['handle'],
     anchor?: Point
   ) => {
+    const multiIds = selectedObjectIds.includes(obj.id) && selectedObjectIds.length > 1
+      ? selectedObjectIds
+      : [obj.id];
+    const objStarts = multiIds
+      .map((id) => sceneObjects.find((o) => o.id === id))
+      .filter((o): o is CanvasObject => !!o)
+      .map((o) => ({ id: o.id, x: o.x, y: o.y }));
+
     dragRef.current = {
       mode,
       pointerId,
       start: point,
+      objStarts,
       objStart: {
         x: obj.x,
         y: obj.y,
@@ -298,9 +370,10 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     e.preventDefault();
 
     const point = getCanvasCoords(e.clientX, e.clientY);
+    const multi = e.shiftKey || e.metaKey || e.ctrlKey;
 
-    // 1) Handles of the currently selected object win over everything
-    if (selectedObject) {
+    // 1) Handles of the primary selected object
+    if (selectedObject && !multi) {
       const hit = hitTestHandles(selectedObject, point.x, point.y);
       if (hit === 'rotate') {
         startDrag(selectedObject, 'rotate-handle', e.pointerId, point);
@@ -327,8 +400,10 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     // 2) Object hit test
     const obj = findObjectAtPosition(point.x, point.y);
     if (obj) {
-      if (obj.id !== selectedObjectId) {
-        selectObject(obj.id);
+      if (multi) {
+        toggleMultiSelect(obj.id);
+      } else {
+        selectObject(obj.id); // also resets multi-selection to [obj.id]
       }
       if (activeTool === 'scale') {
         startDrag(obj, 'scale-tool', e.pointerId, point);
@@ -345,7 +420,6 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const point = getCanvasCoords(e.clientX, e.clientY);
 
-    // Hover cursor feedback
     if (!dragRef.current) {
       let cursor: string | null = null;
       if (selectedObject) {
@@ -368,10 +442,10 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
       case 'move': {
         const dx = point.x - drag.start.x;
         const dy = point.y - drag.start.y;
-        updateCanvasObject(selectedObject.id, {
-          x: objStart.x + dx,
-          y: objStart.y + dy,
-        });
+        // move every selected object together
+        for (const s of drag.objStarts) {
+          updateCanvasObject(s.id, { x: s.x + dx, y: s.y + dy });
+        }
         break;
       }
       case 'scale-tool': {
@@ -399,7 +473,6 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
         const baseH = objStart.height;
 
         if (handle === 'tl' || handle === 'tr' || handle === 'bl' || handle === 'br') {
-          // Uniform scale from the opposite (anchor) corner — aspect locked
           const anchor = drag.anchor || {
             x: objStart.x + (handle === 'tl' || handle === 'bl' ? baseW * objStart.scaleX : 0),
             y: objStart.y + (handle === 'tl' || handle === 'tr' ? baseH * objStart.scaleY : 0),
@@ -429,14 +502,8 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
             ny = anchor.y;
           }
 
-          updateCanvasObject(selectedObject.id, {
-            scaleX: s,
-            scaleY: s,
-            x: nx,
-            y: ny,
-          });
+          updateCanvasObject(selectedObject.id, { scaleX: s, scaleY: s, x: nx, y: ny });
         } else {
-          // Edge handles — single axis scaling
           if (handle === 'e' || handle === 'w') {
             const w0 = baseW * objStart.scaleX;
             const factor =
@@ -471,7 +538,7 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const endDrag = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (dragRef.current && dragRef.current.pointerId === e.pointerId) {
       dragRef.current = null;
-      commitTransform(); // snapshot for undo
+      commitTransform();
     }
   };
 

@@ -50,6 +50,10 @@ interface EditorState {
   // Canvas
   canvasObjects: CanvasObject[];
   selectedObjectId: string | null;
+  /** Multi-selection (includes the primary selectedObjectId when set) */
+  selectedObjectIds: string[];
+  /** Transient live lip-sync level 0..1 during playback (not persisted) */
+  lipSyncLevel: number;
   activeTool: EditorTool;
   
   // Assets
@@ -112,8 +116,12 @@ interface EditorState {
   addCanvasObject: (obj: Omit<CanvasObject, 'id'>) => void;
   updateCanvasObject: (id: string, updates: Partial<CanvasObject>) => void;
   deleteCanvasObject: (id: string) => void;
+  deleteCanvasObjects: (ids: string[]) => void;
   duplicateCanvasObject: (id: string) => void;
   selectObject: (id: string | null) => void;
+  toggleMultiSelect: (id: string) => void;
+  clearMultiSelect: () => void;
+  setLipSyncLevel: (level: number) => void;
   setTool: (tool: EditorTool) => void;
   moveObject: (id: string, x: number, y: number) => void;
   scaleObject: (id: string, scaleX: number, scaleY: number) => void;
@@ -201,6 +209,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   zoom: 1,
   canvasObjects: [],
   selectedObjectId: null,
+  selectedObjectIds: [],
+  lipSyncLevel: 0,
   activeTool: 'select',
   characters: [],
   backgrounds: [],
@@ -566,6 +576,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       canvasObjects: state.canvasObjects.filter((obj) => obj.id !== id),
       selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
+      selectedObjectIds: state.selectedObjectIds.filter((oid) => oid !== id),
+    }));
+    get().saveSnapshot();
+  },
+
+  deleteCanvasObjects: (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    set((state) => ({
+      canvasObjects: state.canvasObjects.filter((obj) => !idSet.has(obj.id)),
+      selectedObjectId: state.selectedObjectId && idSet.has(state.selectedObjectId) ? null : state.selectedObjectId,
+      selectedObjectIds: state.selectedObjectIds.filter((oid) => !idSet.has(oid)),
     }));
     get().saveSnapshot();
   },
@@ -590,7 +612,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().saveSnapshot();
   },
 
-  selectObject: (id: string | null) => set({ selectedObjectId: id }),
+  selectObject: (id: string | null) =>
+    set({ selectedObjectId: id, selectedObjectIds: id ? [id] : [] }),
+
+  toggleMultiSelect: (id: string) => {
+    set((state) => {
+      const has = state.selectedObjectIds.includes(id);
+      const next = has
+        ? state.selectedObjectIds.filter((oid) => oid !== id)
+        : [...state.selectedObjectIds, id];
+      return {
+        selectedObjectIds: next,
+        // last clicked becomes the primary object
+        selectedObjectId: id,
+      };
+    });
+  },
+
+  clearMultiSelect: () => set({ selectedObjectIds: [] }),
+
+  setLipSyncLevel: (level: number) => {
+    // tiny float changes are ignored to avoid needless re-renders
+    if (Math.abs(get().lipSyncLevel - level) > 0.01) {
+      set({ lipSyncLevel: level });
+    }
+  },
 
   setTool: (tool: EditorTool) => set({ activeTool: tool }),
 
@@ -823,6 +869,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isPlaying: false,
       canvasObjects: [],
       selectedObjectId: null,
+      selectedObjectIds: [],
       history: { past: [], future: [] },
     });
   },
@@ -839,6 +886,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       zoom: 1,
       canvasObjects: [],
       selectedObjectId: null,
+      selectedObjectIds: [],
+      lipSyncLevel: 0,
       activeTool: 'select',
       characters: [],
       backgrounds: [],

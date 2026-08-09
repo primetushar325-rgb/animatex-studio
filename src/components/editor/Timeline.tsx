@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useEditorStore } from '@/store/editor-store';
+import { objectToKeyframeProperties, findClipForObject } from '@/lib/editor/keyframes';
 
 export function Timeline() {
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -24,6 +25,8 @@ export function Timeline() {
     selectedObjectId,
     selectObject,
     deleteClip,
+    addKeyframe,
+    setCurrentScene,
   } = useEditorStore();
 
   const currentScene = scenes.find((s) => s.id === currentSceneId);
@@ -36,22 +39,42 @@ export function Timeline() {
     if (obj.assetId) objectByAssetId.set(obj.assetId, { name: obj.name, type: obj.type });
   }
 
-  // Playback timer
+  const selectedObject = canvasObjects.find((o) => o.id === selectedObjectId) || null;
+
+  // Playback across ALL scenes (loops through the sequence)
+  const totalDuration = scenes.reduce((t, s) => t + s.duration, 0);
+  const playStartRef = useRef(0);
+
   useEffect(() => {
     if (!isPlaying) return;
+    if (scenes.length === 0) return;
 
-    const startTime = Date.now() - currentTime;
+    // read the initial playhead position without subscribing (avoids restart loops)
+    playStartRef.current = Date.now() - useEditorStore.getState().currentTime;
     let animationId: number;
 
     const tick = () => {
-      const elapsed = Date.now() - startTime;
-      if (elapsed >= sceneDuration) {
-        setCurrentTime(0);
-        pause();
-      } else {
-        setCurrentTime(elapsed);
-        animationId = requestAnimationFrame(tick);
+      const globalT = (Date.now() - playStartRef.current) % Math.max(1, totalDuration);
+
+      // find which scene this time falls in
+      let acc = 0;
+      let idx = 0;
+      for (let i = 0; i < scenes.length; i++) {
+        if (globalT < acc + scenes[i].duration) {
+          idx = i;
+          break;
+        }
+        acc += scenes[i].duration;
+        idx = i;
       }
+
+      const timeInScene = globalT - acc;
+      const sc = scenes[idx];
+      if (sc && sc.id !== currentSceneId) {
+        setCurrentScene(sc.id);
+      }
+      setCurrentTime(Math.min(timeInScene, sc?.duration || 0));
+      animationId = requestAnimationFrame(tick);
     };
 
     animationId = requestAnimationFrame(tick);
@@ -59,7 +82,7 @@ export function Timeline() {
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [isPlaying, currentTime, sceneDuration, setCurrentTime, pause]);
+  }, [isPlaying, totalDuration, currentSceneId, setCurrentScene, setCurrentTime, scenes]);
 
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -85,15 +108,10 @@ export function Timeline() {
     handleTimelineClick(e);
   };
 
-  // Clicking a clip selects the matching canvas object
   const handleClipClick = (e: React.MouseEvent, clipId: string, assetId: string) => {
     e.stopPropagation();
     const obj = canvasObjects.find((o) => o.assetId === assetId && o.sceneId === currentSceneId);
-    if (obj) {
-      selectObject(obj.id);
-    } else {
-      selectObject(null);
-    }
+    selectObject(obj ? obj.id : null);
   };
 
   const handleClipDelete = (e: React.MouseEvent, clipId: string) => {
@@ -101,15 +119,36 @@ export function Timeline() {
     deleteClip(clipId);
   };
 
+  // Add a keyframe at the playhead for the selected object
+  const handleAddKeyframe = useCallback(() => {
+    if (!selectedObject || !selectedObject.assetId) return;
+    const clip = findClipForObject(clips, selectedObject, currentSceneId ?? undefined);
+    if (!clip) return;
+
+    const props = objectToKeyframeProperties(selectedObject);
+    const clipTime = currentTime - clip.startTime;
+    if (clipTime < 0) return;
+
+    addKeyframe(clip.id, clipTime, props);
+  }, [selectedObject, clips, currentSceneId, currentTime, addKeyframe]);
+
+  const handleSeekToStart = () => {
+    // go to first scene, time 0
+    if (scenes.length > 0) {
+      setCurrentScene(scenes[0].id);
+    }
+    seek(0);
+  };
+
   return (
     <div className="bg-gray-800 border-t border-gray-700 flex flex-col">
       {/* Transport Controls */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-gray-700">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-700 overflow-x-auto">
         {/* Play/Pause */}
         <button
           onClick={togglePlay}
-          className="w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700 rounded-full text-white transition-colors"
-          title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+          className="w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700 rounded-full text-white transition-colors shrink-0"
+          title={isPlaying ? 'Pause (Space)' : 'Play all scenes (Space)'}
         >
           {isPlaying ? (
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -123,13 +162,32 @@ export function Timeline() {
           )}
         </button>
 
+        <button
+          onClick={handleSeekToStart}
+          className="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded text-white shrink-0"
+          title="Go to start"
+        >
+          ⏮️
+        </button>
+
         {/* Time Display */}
-        <div className="font-mono text-white text-sm bg-gray-900 px-3 py-1 rounded">
+        <div className="font-mono text-white text-sm bg-gray-900 px-3 py-1 rounded shrink-0">
           {formatTime(currentTime)} / {formatTime(sceneDuration)}
         </div>
 
+        {/* Keyframe button */}
+        {selectedObject && selectedObject.assetId && (
+          <button
+            onClick={handleAddKeyframe}
+            className="flex items-center gap-1 px-2 py-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-lg text-xs font-medium shrink-0 transition-colors"
+            title="Add keyframe at playhead for the selected object"
+          >
+            ◆ Keyframe
+          </button>
+        )}
+
         {/* Zoom Controls */}
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2 ml-auto shrink-0">
           <button
             onClick={() => setZoom(Math.max(0.5, zoom - 0.5))}
             className="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded text-white"
@@ -159,7 +217,6 @@ export function Timeline() {
         onTouchMove={handlePlayheadDrag}
         onTouchEnd={() => setIsDraggingPlayhead(false)}
       >
-        {/* Time markers */}
         {Array.from({ length: Math.ceil(sceneDuration / 1000) + 1 }).map((_, i) => (
           <div
             key={i}
@@ -246,7 +303,9 @@ export function Timeline() {
                       title={`${linked?.name || clip.assetId.slice(0, 8)} — click to select`}
                     >
                       <div className="px-2 py-1 text-white text-xs truncate flex items-center gap-1">
-                        <span className="truncate">{linked?.name || clip.assetId.slice(0, 8)}</span>
+                        <span className="truncate">
+                          {linked?.name || clip.assetId.slice(0, 8)}
+                        </span>
                         {isSelected && (
                           <button
                             onClick={(e) => handleClipDelete(e, clip.id)}
@@ -257,6 +316,18 @@ export function Timeline() {
                           </button>
                         )}
                       </div>
+
+                      {/* Keyframe diamonds */}
+                      {clip.keyframes.map((kf) => (
+                        <div
+                          key={kf.id}
+                          className="absolute -top-0.5 w-2.5 h-2.5 bg-yellow-300 border border-yellow-600 rounded-[2px] rotate-45"
+                          style={{
+                            left: `${((clip.startTime + kf.time) / sceneDuration) * 100}%`,
+                          }}
+                          title={`Keyframe @ ${(kf.time / 1000).toFixed(1)}s`}
+                        />
+                      ))}
                     </div>
                   );
                 })}
