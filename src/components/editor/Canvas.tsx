@@ -9,6 +9,79 @@ interface Point {
   y: number;
 }
 
+// Draws a simple stick-figure style character inside the given box
+function drawCharacter(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  const skin = '#F4C2A1';
+  const shirt = '#4A90D9';
+  const pants = '#3B4A6B';
+  const cx = x + w / 2;
+
+  const headR = w * 0.18;
+  const headCY = y + headR + h * 0.02;
+  const neckY = headCY + headR;
+  const shoulderY = neckY + h * 0.02;
+  const hipY = y + h * 0.58;
+  const handY = hipY - h * 0.02;
+  const footY = y + h * 0.98;
+
+  const shoulderW = w * 0.34;
+  const hipW = w * 0.24;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Legs
+  ctx.strokeStyle = pants;
+  ctx.lineWidth = w * 0.14;
+  ctx.beginPath();
+  ctx.moveTo(cx - hipW / 2, hipY);
+  ctx.lineTo(cx - hipW / 2, footY);
+  ctx.moveTo(cx + hipW / 2, hipY);
+  ctx.lineTo(cx + hipW / 2, footY);
+  ctx.stroke();
+
+  // Arms
+  ctx.strokeStyle = skin;
+  ctx.lineWidth = w * 0.1;
+  ctx.beginPath();
+  ctx.moveTo(cx - shoulderW / 2, shoulderY);
+  ctx.lineTo(cx - shoulderW / 2 - w * 0.06, handY);
+  ctx.moveTo(cx + shoulderW / 2, shoulderY);
+  ctx.lineTo(cx + shoulderW / 2 + w * 0.06, handY);
+  ctx.stroke();
+
+  // Body (torso)
+  ctx.fillStyle = shirt;
+  ctx.beginPath();
+  ctx.moveTo(cx - shoulderW / 2, shoulderY);
+  ctx.lineTo(cx + shoulderW / 2, shoulderY);
+  ctx.lineTo(cx + hipW / 2, hipY);
+  ctx.lineTo(cx - hipW / 2, hipY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Head
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.arc(cx, headCY, headR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Simple face
+  ctx.fillStyle = '#333';
+  const eyeOffset = headR * 0.35;
+  const eyeR = headR * 0.08;
+  ctx.beginPath();
+  ctx.arc(cx - eyeOffset, headCY - headR * 0.05, eyeR, 0, Math.PI * 2);
+  ctx.arc(cx + eyeOffset, headCY - headR * 0.05, eyeR, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = Math.max(1, headR * 0.06);
+  ctx.beginPath();
+  ctx.arc(cx, headCY + headR * 0.15, headR * 0.3, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+}
+
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,14 +136,12 @@ export function Canvas() {
       ctx.translate(-centerX, -centerY);
 
       // Draw based on type
-      if (obj.type === 'character' || obj.type === 'background' || obj.type === 'prop') {
-        // Draw placeholder rectangle for now
+      if (obj.type === 'character') {
+        drawCharacter(ctx, obj.x, obj.y, obj.width * obj.scaleX, obj.height * obj.scaleY);
+      } else if (obj.type === 'background' || obj.type === 'prop') {
         const gradient = ctx.createLinearGradient(obj.x, obj.y, obj.x + obj.width * obj.scaleX, obj.y + obj.height * obj.scaleY);
-        
-        if (obj.type === 'character') {
-          gradient.addColorStop(0, '#FFB6C1');
-          gradient.addColorStop(1, '#FF69B4');
-        } else if (obj.type === 'background') {
+
+        if (obj.type === 'background') {
           gradient.addColorStop(0, '#98FB98');
           gradient.addColorStop(1, '#32CD32');
         } else {
@@ -86,7 +157,7 @@ export function Canvas() {
         ctx.font = `${Math.min(obj.width * obj.scaleX, obj.height * obj.scaleY) * 0.3}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const icon = obj.type === 'character' ? '👤' : obj.type === 'background' ? '🏞️' : '📦';
+        const icon = obj.type === 'background' ? '🏞️' : '📦';
         ctx.fillText(icon, centerX, centerY);
       } else if (obj.type === 'text' && obj.content) {
         ctx.font = '24px sans-serif';
@@ -112,7 +183,7 @@ export function Canvas() {
         const handleSize = 8;
         ctx.fillStyle = '#3B82F6';
         ctx.setLineDash([]);
-        
+
         // Corner handles
         const corners = [
           { x: obj.x - handleSize / 2, y: obj.y - handleSize / 2 },
@@ -155,7 +226,7 @@ export function Canvas() {
     const updateSize = () => {
       const containerRect = container.getBoundingClientRect();
       const aspectRatio = currentProject.width / currentProject.height;
-      
+
       let width = containerRect.width;
       let height = width / aspectRatio;
 
@@ -193,7 +264,7 @@ export function Canvas() {
   // Find object at position
   const findObjectAtPosition = (x: number, y: number) => {
     const sortedObjects = [...canvasObjects].sort((a, b) => b.zIndex - a.zIndex);
-    
+
     for (const obj of sortedObjects) {
       if (
         x >= obj.x &&
@@ -225,7 +296,6 @@ export function Canvas() {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging || !selectedObjectId || !objectDragStart) return;
-
     const coords = getCanvasCoords(e.clientX, e.clientY);
     const obj = canvasObjects.find((o) => o.id === selectedObjectId);
     if (!obj) return;
@@ -254,7 +324,6 @@ export function Canvas() {
       const touch = e.touches[0];
       const coords = getCanvasCoords(touch.clientX, touch.clientY);
       const obj = findObjectAtPosition(coords.x, coords.y);
-
       if (obj) {
         selectObject(obj.id);
         setObjectDragStart(coords);
