@@ -157,6 +157,19 @@ export interface BoneTransform {
 // Canvas Objects (elements placed on the stage)
 export type CanvasObjectType = 'character' | 'background' | 'prop' | 'text';
 
+export type MotionPreset =
+  | 'none'
+  | 'fade-in'
+  | 'fade-out'
+  | 'slide-left'
+  | 'slide-right'
+  | 'slide-up'
+  | 'slide-down'
+  | 'pop-in'
+  | 'bounce'
+  | 'zoom-in'
+  | 'spin-in';
+
 export interface CanvasObject {
   id: string;
   /** Scene this object belongs to. Filled automatically when added. */
@@ -187,6 +200,10 @@ export interface CanvasObject {
   fontSize?: number;
   fontColor?: string;
   fontWeight?: string;
+  /** Entrance / exit motion preset, animated during playback */
+  motion?: MotionPreset;
+  /** Scene-time (ms) when the motion should start (default 0) */
+  motionStart?: number;
 }
 
 // Backgrounds

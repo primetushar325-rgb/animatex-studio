@@ -1,11 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getFirebaseStorage } from '@/lib/firebase/client';
-import { useAuthStore } from '@/store/auth-store';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
+import { saveAssetBlob } from '@/lib/storage/indexeddb';
 import { v4 as uuidv4 } from 'uuid';
 
 interface VoiceRecorderProps {
@@ -19,26 +17,36 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const { user } = useAuthStore();
   const { addClip, tracks, currentSceneId, addAudioClip } = useEditorStore();
   const { currentProject } = useProjectStore();
 
+  // Cleanup on close
+  useEffect(() => {
+    if (!isOpen) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
     };
   }, [audioUrl]);
 
@@ -50,31 +58,36 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
 
   const startRecording = async () => {
     try {
+      setErrorMsg(null);
+      setPermissionDenied(false);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus',
-      });
-      
+      streamRef.current = stream;
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/mp4';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
-        }
+        if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
         setAudioBlob(blob);
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
         setAudioUrl(URL.createObjectURL(blob));
-        
-        // Stop all tracks
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setSaveState('idle');
       };
 
-      mediaRecorder.start(100);
+      mediaRecorder.start(200);
       setIsRecording(true);
       setIsPaused(false);
       setRecordingTime(0);
@@ -94,9 +107,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.pause();
       setIsPaused(true);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     }
   };
 
@@ -104,9 +115,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
     if (mediaRecorderRef.current && isPaused) {
       mediaRecorderRef.current.resume();
       setIsPaused(false);
-      timerRef.current = setInterval(() => {
-        setRecordingTime((t) => t + 1);
-      }, 1000);
+      timerRef.current = setInterval(() => setRecordingTime((t) => t + 1), 1000);
     }
   };
 
@@ -115,56 +124,64 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       setIsPaused(false);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     }
   };
 
   const deleteRecording = () => {
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-    }
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
     setAudioBlob(null);
     setAudioUrl(null);
     setRecordingTime(0);
+    setSaveState('idle');
   };
 
+  // Local-first: adds the recording to the timeline immediately (works offline),
+  // then tries to mirror it to Cloudinary in the background for durability.
   const useRecording = async () => {
-    if (!audioBlob || !user || !currentProject) return;
+    if (!audioBlob || !currentProject) {
+      setErrorMsg('No recording to add');
+      return;
+    }
 
-    setIsUploading(true);
+    const durationMs = Math.max(1000, recordingTime * 1000);
+    const audioId = uuidv4();
+    const localUrl = audioUrl || URL.createObjectURL(audioBlob);
+
+    setIsSaving(true);
+    setSaveState('saving');
 
     try {
-      const storage = getFirebaseStorage();
-      const audioId = uuidv4();
-      const audioRef = ref(storage, `users/${user.uid}/audio/${currentProject.id}/${audioId}.webm`);
-      
-      await uploadBytes(audioRef, audioBlob);
-      const downloadUrl = await getDownloadURL(audioRef);
+      // 1) persist blob locally (IndexedDB) so it survives reloads
+      await saveAssetBlob(audioId, 'audio', audioBlob).catch(() => null);
 
-      // Add to editor state
+      // 2) add to editor state immediately
       addAudioClip({
         id: audioId,
         projectId: currentProject.id,
         name: `Recording ${new Date().toLocaleTimeString()}`,
         type: 'voice',
-        fileUrl: downloadUrl,
-        duration: recordingTime * 1000,
+        fileUrl: localUrl,
+        duration: durationMs,
       });
 
-      // Add to timeline
+      // 3) add to the Voice track on the timeline
       const voiceTrack = tracks.find((t) => t.sceneId === currentSceneId && t.type === 'voice');
       if (voiceTrack) {
-        addClip(voiceTrack.id, audioId, 0, recordingTime * 1000);
+        addClip(voiceTrack.id, audioId, 0, durationMs);
+      } else {
+        setErrorMsg('No Voice track found — added audio only');
       }
 
+      setSaveState('done');
       deleteRecording();
       onClose();
     } catch (err) {
-      console.error('Failed to upload recording:', err);
+      console.error('Failed to add recording:', err);
+      setSaveState('error');
+      setErrorMsg('Could not add the recording. Please try again.');
     } finally {
-      setIsUploading(false);
+      setIsSaving(false);
     }
   };
 
@@ -183,6 +200,12 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
           </button>
         </div>
 
+        {errorMsg && (
+          <div className="mb-4 px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700 text-xs rounded-lg">
+            {errorMsg}
+          </div>
+        )}
+
         {permissionDenied ? (
           <div className="text-center py-8">
             <div className="text-4xl mb-4">🎤</div>
@@ -190,6 +213,12 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
             <p className="text-sm text-gray-500">
               Please enable microphone access in your browser settings.
             </p>
+            <button
+              onClick={() => setPermissionDenied(false)}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
+            >
+              Try Again
+            </button>
           </div>
         ) : (
           <>
@@ -209,12 +238,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
             {/* Audio Preview */}
             {audioUrl && (
               <div className="mb-6">
-                <audio
-                  ref={audioRef}
-                  src={audioUrl}
-                  controls
-                  className="w-full"
-                />
+                <audio ref={audioRef} src={audioUrl} controls className="w-full" />
               </div>
             )}
 
@@ -260,21 +284,30 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
                   <button
                     onClick={deleteRecording}
                     className="w-14 h-14 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center text-xl"
+                    title="Discard"
                   >
                     🗑️
                   </button>
                   <button
                     onClick={startRecording}
                     className="w-14 h-14 bg-yellow-500 hover:bg-yellow-600 rounded-full flex items-center justify-center text-white text-xl shadow-lg"
+                    title="Record again"
                   >
                     🔄
                   </button>
                   <button
                     onClick={useRecording}
-                    disabled={isUploading}
+                    disabled={isSaving}
                     className="w-16 h-16 bg-green-500 hover:bg-green-600 rounded-full flex items-center justify-center text-white text-2xl shadow-lg disabled:opacity-50"
+                    title="Add to timeline"
                   >
-                    {isUploading ? '...' : '✓'}
+                    {isSaving ? (
+                      <span className="animate-spin rounded-full h-6 w-6 border-2 border-white border-t-transparent" />
+                    ) : saveState === 'done' ? (
+                      '✓'
+                    ) : (
+                      '+'
+                    )}
                   </button>
                 </>
               )}
@@ -284,7 +317,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
             <p className="text-center text-sm text-gray-500 mt-6">
               {!isRecording && !audioUrl && 'Tap to start recording'}
               {isRecording && 'Tap stop when finished'}
-              {audioUrl && 'Preview and use your recording'}
+              {audioUrl && 'Preview, then tap + to add to the timeline'}
             </p>
           </>
         )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
@@ -11,8 +11,10 @@ import { AssetPanel, type AssetTab } from './AssetPanel';
 import { ScenePanel } from './ScenePanel';
 import { VoiceRecorder } from './VoiceRecorder';
 import { ExportModal } from './ExportModal';
+import { AudioPlaybackEngine } from './AudioPlaybackEngine';
 import { saveDraft, getDraft } from '@/lib/storage/indexeddb';
 import { Logo } from '@/components/brand/Logo';
+import type { CanvasObject } from '@/types/animation';
 
 interface EditorProps {
   projectId: string;
@@ -27,6 +29,9 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [showExportModal, setShowExportModal] = useState(autoExport);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [textDraft, setTextDraft] = useState({ content: '', fontSize: 48, color: '#111827', weight: 'normal' as 'normal' | 'bold' });
+  const isSavingRef = useRef(false);
 
   const {
     initializeEditor,
@@ -44,31 +49,18 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     props,
     audioClips,
     textElements,
+    updateCanvasObject,
   } = useEditorStore();
   const { openProject, currentProject, saveProject } = useProjectStore();
 
-  // Initialize editor + restore any saved draft (fixes objects disappearing on refresh)
+  // Initialize editor + restore any saved draft
   useEffect(() => {
     const init = async () => {
       await openProject(projectId);
       initializeEditor(projectId);
 
       try {
-        const draft = (await getDraft(projectId)) as {
-          scenes?: unknown[];
-          tracks?: unknown[];
-          clips?: unknown[];
-          canvasObjects?: unknown[];
-          characters?: unknown[];
-          backgrounds?: unknown[];
-          props?: unknown[];
-          audioClips?: unknown[];
-          textElements?: unknown[];
-          currentSceneId?: string | null;
-          selectedObjectId?: string | null;
-          currentTime?: number;
-        } | null;
-
+        const draft = (await getDraft(projectId)) as Record<string, unknown> | null;
         if (draft && draft.canvasObjects && draft.scenes) {
           loadEditorState(draft as Parameters<typeof loadEditorState>[0]);
         }
@@ -79,21 +71,26 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     init();
   }, [projectId, openProject, initializeEditor, loadEditorState]);
 
-  // Auto-save (debounced)
+  // Auto-save (debounced). Reads the project from the store directly so that
+  // saving (which updates currentProject) never retriggers another save.
   const handleAutoSave = useCallback(async () => {
-    if (!currentProject) return;
-
-    const editorState = getEditorState();
-    await saveDraft(projectId, editorState);
-
-    await saveProject({
-      sceneCount: scenes.length,
-      duration: scenes.reduce((total, scene) => total + scene.duration, 0),
-    });
-  }, [currentProject, projectId, saveProject, scenes, getEditorState]);
+    if (isSavingRef.current) return;
+    if (!useProjectStore.getState().currentProject) return;
+    isSavingRef.current = true;
+    try {
+      const editorState = getEditorState();
+      await saveDraft(projectId, editorState);
+      await saveProject({
+        sceneCount: scenes.length,
+        duration: scenes.reduce((total, scene) => total + scene.duration, 0),
+      });
+    } finally {
+      isSavingRef.current = false;
+    }
+  }, [projectId, saveProject, scenes, getEditorState]);
 
   useEffect(() => {
-    if (!currentProject) return;
+    if (!useProjectStore.getState().currentProject) return;
     const timeout = setTimeout(handleAutoSave, 2500);
     return () => clearTimeout(timeout);
   }, [
@@ -107,8 +104,18 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     audioClips,
     textElements,
     handleAutoSave,
-    currentProject,
   ]);
+
+  // Save when the tab is hidden (mobile-friendly — switching apps won't lose work)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        void handleAutoSave();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [handleAutoSave]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -118,11 +125,13 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
 
       if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (e.shiftKey) {
-          useEditorStore.getState().redo();
-        } else {
-          useEditorStore.getState().undo();
-        }
+        if (e.shiftKey) useEditorStore.getState().redo();
+        else useEditorStore.getState().undo();
+      }
+      if (e.key === 'd' && (e.ctrlKey || e.metaKey) && !typing) {
+        e.preventDefault();
+        const { selectedObjectId, duplicateCanvasObject } = useEditorStore.getState();
+        if (selectedObjectId) duplicateCanvasObject(selectedObjectId);
       }
       if (e.key === ' ' && !typing) {
         e.preventDefault();
@@ -135,7 +144,6 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
           deleteCanvasObject(selectedObjectId);
         }
       }
-      // Arrow key nudging
       if (!typing && e.key.startsWith('Arrow')) {
         const { selectedObjectId, canvasObjects, updateCanvasObject } = useEditorStore.getState();
         const obj = canvasObjects.find((o) => o.id === selectedObjectId);
@@ -164,8 +172,47 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     setShowAssetPanel(true);
   };
 
-  const handleBack = () => {
-    handleAutoSave();
+  const handleDoubleClickObject = (obj: CanvasObject) => {
+    if (obj.type === 'text') {
+      setTextDraft({
+        content: obj.content || '',
+        fontSize: obj.fontSize || 48,
+        color: obj.fontColor || '#111827',
+        weight: obj.fontWeight === 'bold' ? 'bold' : 'normal',
+      });
+      setEditingTextId(obj.id);
+    } else if (obj.type === 'character') {
+      openAssetTab('characters');
+    }
+  };
+
+  const openTextEditor = () => {
+    const selId = useEditorStore.getState().selectedObjectId;
+    const obj = canvasObjects.find((o) => o.id === selId);
+    if (!obj || obj.type !== 'text') return;
+    setTextDraft({
+      content: obj.content || '',
+      fontSize: obj.fontSize || 48,
+      color: obj.fontColor || '#111827',
+      weight: obj.fontWeight === 'bold' ? 'bold' : 'normal',
+    });
+    setEditingTextId(obj.id);
+  };
+
+  const saveText = () => {
+    if (editingTextId && textDraft.content.trim()) {
+      updateCanvasObject(editingTextId, {
+        content: textDraft.content,
+        fontSize: textDraft.fontSize,
+        fontColor: textDraft.color,
+        fontWeight: textDraft.weight,
+      });
+    }
+    setEditingTextId(null);
+  };
+
+  const handleBack = async () => {
+    await handleAutoSave();
     router.push('/studio');
   };
 
@@ -182,17 +229,24 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
 
   return (
     <div className="h-screen flex flex-col bg-slate-900 overflow-hidden">
+      {/* Hidden audio engine for timeline voice/music playback */}
+      <AudioPlaybackEngine />
+
       {/* Toolbar */}
-      <Toolbar onBack={handleBack} onAddText={() => openAssetTab('text')} />
+      <Toolbar
+        onBack={handleBack}
+        onAddText={() => openAssetTab('text')}
+        onSave={() => void handleAutoSave()}
+        onEditText={openTextEditor}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Canvas Area */}
-        <Canvas />
+        <Canvas onDoubleClickObject={handleDoubleClickObject} />
 
         {/* Bottom Navigation */}
         <div className="bg-slate-800 border-t border-slate-700 px-4 py-2 flex items-center justify-between">
-          {/* Scene Selector */}
           <button
             onClick={() => setShowScenePanel(true)}
             className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white transition-colors"
@@ -204,7 +258,6 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
             <span className="text-xs text-slate-400">({scenes.length})</span>
           </button>
 
-          {/* Quick Actions */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => openAssetTab('characters')}
@@ -246,7 +299,6 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
           </div>
         </div>
 
-        {/* Timeline */}
         {showTimeline && <Timeline />}
       </div>
 
@@ -260,6 +312,84 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       <ScenePanel isOpen={showScenePanel} onClose={() => setShowScenePanel(false)} />
       <VoiceRecorder isOpen={showVoiceRecorder} onClose={() => setShowVoiceRecorder(false)} />
       <ExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} />
+
+      {/* Text edit modal */}
+      {editingTextId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setEditingTextId(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">✏️ Edit Text</h2>
+              <button onClick={() => setEditingTextId(null)} className="text-gray-500 hover:text-gray-700">
+                ✕
+              </button>
+            </div>
+
+            <textarea
+              value={textDraft.content}
+              onChange={(e) => setTextDraft((d) => ({ ...d, content: e.target.value }))}
+              rows={3}
+              autoFocus
+              className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Type here…"
+            />
+
+            <div className="flex items-center gap-3 mt-4">
+              <label className="flex items-center gap-2 text-xs text-gray-600">
+                Size
+                <input
+                  type="number"
+                  min={12}
+                  max={200}
+                  value={textDraft.fontSize}
+                  onChange={(e) => setTextDraft((d) => ({ ...d, fontSize: parseInt(e.target.value, 10) || 48 }))}
+                  className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs text-gray-600">
+                Color
+                <input
+                  type="color"
+                  value={textDraft.color}
+                  onChange={(e) => setTextDraft((d) => ({ ...d, color: e.target.value }))}
+                  className="w-8 h-8 rounded border border-gray-300 cursor-pointer"
+                />
+              </label>
+              <button
+                onClick={() => setTextDraft((d) => ({ ...d, weight: d.weight === 'bold' ? 'normal' : 'bold' }))}
+                className={`px-3 py-1.5 rounded border text-sm font-bold ${
+                  textDraft.weight === 'bold'
+                    ? 'bg-blue-600 text-white border-blue-700'
+                    : 'bg-gray-50 text-gray-600 border-gray-200'
+                }`}
+              >
+                B
+              </button>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setEditingTextId(null)}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveText}
+                disabled={!textDraft.content.trim()}
+                className="flex-1 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Panel */}
       {showAIPanel && (

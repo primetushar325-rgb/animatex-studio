@@ -18,6 +18,7 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
     renameScene,
     setCurrentScene,
     reorderScenes,
+    updateScene,
   } = useEditorStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -135,9 +136,33 @@ export function ScenePanel({ isOpen, onClose }: ScenePanelProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                  <span>Duration: {(scene.duration / 1000).toFixed(1)}s</span>
-                  <span className="w-3 h-3 rounded" style={{ backgroundColor: scene.backgroundColor }}></span>
+                <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                  <span>Duration:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={scene.duration / 1000}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const secs = parseFloat(e.target.value);
+                      if (secs > 0) {
+                        updateScene(scene.id, { duration: Math.round(secs * 1000) });
+                      }
+                    }}
+                    className="w-14 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                  />
+                  <span>s</span>
+                  <span className="flex-1" />
+                  <span title="Background color">
+                    <input
+                      type="color"
+                      value={scene.backgroundColor}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => updateScene(scene.id, { backgroundColor: e.target.value })}
+                      className="w-6 h-6 rounded cursor-pointer border border-gray-300"
+                    />
+                  </span>
                 </div>
               </div>
             ))}

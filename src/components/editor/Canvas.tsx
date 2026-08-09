@@ -11,6 +11,11 @@ import {
 } from '@/lib/editor/renderer';
 import type { CanvasObject } from '@/types/animation';
 
+interface CanvasProps {
+  /** Called when an object is double-clicked (e.g. open text editor). */
+  onDoubleClickObject?: (obj: CanvasObject) => void;
+}
+
 interface Point {
   x: number;
   y: number;
@@ -44,7 +49,7 @@ interface DragState {
 
 const HANDLE_HIT_PX = 12;
 
-export function Canvas() {
+export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -63,6 +68,8 @@ export function Canvas() {
     scenes,
     currentTime,
     isPlaying,
+    watermarkEnabled,
+    watermarkText,
   } = useEditorStore();
 
   const { currentProject } = useProjectStore();
@@ -91,14 +98,19 @@ export function Canvas() {
       t,
       animClockRef.current,
       canvas.width,
-      canvas.height
+      canvas.height,
+      {
+        playback: isPlaying,
+        sceneDuration: currentScene?.duration,
+        watermark: { text: watermarkText, enabled: watermarkEnabled },
+      }
     );
 
     // Selection overlay (always on top, outside rotation)
     if (selectedObject) {
       drawSelectionOverlay(ctx, selectedObject);
     }
-  }, [sceneObjects, selectedObject, currentScene, currentProject, isPlaying, currentTime]);
+  }, [sceneObjects, selectedObject, currentScene, currentProject, isPlaying, currentTime, watermarkEnabled, watermarkText]);
 
   // Animation loop — also advances the "life" clock for idle breathing
   useEffect(() => {
@@ -470,6 +482,15 @@ export function Canvas() {
     }
   };
 
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const point = getCanvasCoords(e.clientX, e.clientY);
+    const obj = findObjectAtPosition(point.x, point.y);
+    if (obj) {
+      selectObject(obj.id);
+      onDoubleClickObject?.(obj);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -483,6 +504,7 @@ export function Canvas() {
         onPointerMove={handlePointerMove}
         onPointerUp={endDrag}
         onPointerCancel={cancelDrag}
+        onDoubleClick={handleDoubleClick}
         onPointerLeave={() => {
           if (!dragRef.current) {
             const canvas = canvasRef.current;

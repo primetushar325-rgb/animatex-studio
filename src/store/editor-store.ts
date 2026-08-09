@@ -66,13 +66,18 @@ interface EditorState {
   showTimeline: boolean;
   showAssetPanel: boolean;
   activePanel: 'characters' | 'backgrounds' | 'props' | 'audio' | 'text' | 'script' | null;
-  
+
+  // Watermark
+  watermarkEnabled: boolean;
+  watermarkText: string;
+
   // Actions - Scenes
   addScene: (name?: string) => void;
   deleteScene: (sceneId: string) => void;
   duplicateScene: (sceneId: string) => void;
   renameScene: (sceneId: string, name: string) => void;
   setCurrentScene: (sceneId: string) => void;
+  updateScene: (sceneId: string, patch: Partial<Scene>) => void;
   reorderScenes: (fromIndex: number, toIndex: number) => void;
   
   // Actions - Timeline
@@ -107,6 +112,7 @@ interface EditorState {
   addCanvasObject: (obj: Omit<CanvasObject, 'id'>) => void;
   updateCanvasObject: (id: string, updates: Partial<CanvasObject>) => void;
   deleteCanvasObject: (id: string) => void;
+  duplicateCanvasObject: (id: string) => void;
   selectObject: (id: string | null) => void;
   setTool: (tool: EditorTool) => void;
   moveObject: (id: string, x: number, y: number) => void;
@@ -119,12 +125,16 @@ interface EditorState {
   commitTransform: () => void;
   bringForward: (id: string) => void;
   sendBackward: (id: string) => void;
+
+  // Actions - Watermark
+  setWatermark: (enabled: boolean, text: string) => void;
   
   // Actions - Assets
   addCharacter: (character: Character) => void;
   addBackground: (background: Background) => void;
   addProp: (prop: Prop) => void;
   addAudioClip: (audioClip: AudioClip) => void;
+  updateAudioClip: (id: string, patch: Partial<AudioClip>) => void;
   addTextElement: (text: TextElement) => void;
   deleteAsset: (type: 'character' | 'background' | 'prop' | 'audio', id: string) => void;
   
@@ -201,6 +211,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   showTimeline: true,
   showAssetPanel: false,
   activePanel: null,
+  watermarkEnabled: true,
+  watermarkText: 'AnimateX Studio',
 
   // Scene Actions
   addScene: (name?: string) => {
@@ -290,6 +302,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setCurrentScene: (sceneId: string) => {
     set({ currentSceneId: sceneId, currentTime: 0 });
+  },
+
+  updateScene: (sceneId: string, patch: Partial<Scene>) => {
+    set((state) => ({
+      scenes: state.scenes.map((s) => (s.id === sceneId ? { ...s, ...patch } : s)),
+    }));
   },
 
   reorderScenes: (fromIndex: number, toIndex: number) => {
@@ -552,6 +570,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().saveSnapshot();
   },
 
+  duplicateCanvasObject: (id: string) => {
+    const { canvasObjects } = get();
+    const original = canvasObjects.find((o) => o.id === id);
+    if (!original) return;
+
+    const copy: CanvasObject = {
+      ...JSON.parse(JSON.stringify(original)),
+      id: uuidv4(),
+      x: original.x + 24,
+      y: original.y + 24,
+      motion: 'none',
+    };
+
+    set((state) => ({
+      canvasObjects: [...state.canvasObjects, copy],
+      selectedObjectId: copy.id,
+    }));
+    get().saveSnapshot();
+  },
+
   selectObject: (id: string | null) => set({ selectedObjectId: id }),
 
   setTool: (tool: EditorTool) => set({ activeTool: tool }),
@@ -632,6 +670,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }));
   },
 
+  setWatermark: (enabled: boolean, text: string) => {
+    set({ watermarkEnabled: enabled, watermarkText: text });
+  },
+
   // Asset Actions
   addCharacter: (character: Character) => {
     set((state) => ({ characters: [...state.characters, character] }));
@@ -647,6 +689,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   addAudioClip: (audioClip: AudioClip) => {
     set((state) => ({ audioClips: [...state.audioClips, audioClip] }));
+  },
+
+  updateAudioClip: (id: string, patch: Partial<AudioClip>) => {
+    set((state) => ({
+      audioClips: state.audioClips.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
   },
 
   addTextElement: (text: TextElement) => {
@@ -801,6 +849,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       showTimeline: true,
       showAssetPanel: false,
       activePanel: null,
+      watermarkEnabled: true,
+      watermarkText: 'AnimateX Studio',
     });
   },
 
@@ -814,7 +864,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       scaleY: obj.scaleY ?? 1,
       opacity: obj.opacity ?? 1,
     }));
-    set({ ...state, canvasObjects });
+    set({
+      ...state,
+      canvasObjects,
+      watermarkEnabled: state.watermarkEnabled ?? get().watermarkEnabled,
+      watermarkText: state.watermarkText ?? get().watermarkText,
+    });
   },
 
   getEditorState: () => {
@@ -832,6 +887,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       currentSceneId: state.currentSceneId,
       selectedObjectId: state.selectedObjectId,
       currentTime: state.currentTime,
+      watermarkEnabled: state.watermarkEnabled,
+      watermarkText: state.watermarkText,
     };
   },
 }));

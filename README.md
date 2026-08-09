@@ -208,3 +208,31 @@ Professional editor overhaul — the canvas, timeline and export now actually do
   ```
   Without them the upload buttons show a friendly error instead of crashing.
 - TypeScript strict typechecking (`npm run typecheck`) and ESLint (`npm run lint`) pass clean.
+
+---
+
+## 🆕 Premium Update #2 (2026-08)
+
+Another round of professional upgrades + bug fixes:
+
+### Bug fixes
+1. **Voice recording now actually gets added** — previously the recording was uploaded to Firebase Storage *before* being added to the timeline, so when storage wasn't configured the clip silently vanished. Now it's **local-first**: the recording is saved to IndexedDB, added to the Voice track instantly, and stays playable offline.
+2. **Audio playback in the timeline** — pressing play now actually plays voice/music clips in sync with the timeline (hidden audio engine).
+3. **Save reliability on phones** — pressing Back now waits for the save to finish, saving also triggers when you switch apps (visibilitychange), and a manual 💾 Save button was added to the toolbar. No more lost projects on mobile.
+4. **Infinite autosave loop** prevented (saving no longer re-triggers autosave).
+
+### New premium features
+5. **💧 Watermark** — a small "AnimateX Studio" badge appears in the corner of the canvas preview and in every export. Toggle it and change the text inside the Export dialog.
+6. **🖼️ GIF export** — export your animation as a GIF that plays everywhere, including iOS/Android photo galleries (WebM doesn't work on iOS). A tiny built-in GIF encoder is used — no extra dependencies.
+7. **📸 PNG frame export** — export the current frame as a high-res PNG.
+8. **🎬 Motion presets** — select an object and pick a Motion (Fade In/Out, Slide, Pop In, Bounce, Zoom In, Spin In) from the toolbar; it animates when you press play. Applied in exports too.
+9. **↔️↕️ Align/Center buttons** — one-tap center horizontally / vertically.
+10. **⧉ Duplicate object** — button or Ctrl+D.
+11. **✏️ Edit text on canvas** — double-click a text object (or press the Edit Text button) to change text, size, color and bold.
+12. **🎨 Scene settings** — per-scene background color picker and duration control in the Scenes panel.
+13. **Manual Save button** — 💾 in the toolbar.
+
+### Export formats now
+- **WebM video** (best quality, desktop) — real characters/actions/images/text/watermark
+- **GIF** (universal, mobile gallery friendly)
+- **PNG** (current frame snapshot)

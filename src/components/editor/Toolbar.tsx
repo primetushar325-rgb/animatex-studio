@@ -2,18 +2,23 @@
 
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
+import { MOTION_PRESETS } from '@/lib/editor/renderer';
+import type { MotionPreset } from '@/types/animation';
 
 interface ToolbarProps {
   onBack: () => void;
   onAddText?: () => void;
+  onSave?: () => void;
+  onEditText?: () => void;
 }
 
-export function Toolbar({ onBack, onAddText }: ToolbarProps) {
+export function Toolbar({ onBack, onAddText, onSave, onEditText }: ToolbarProps) {
   const {
     activeTool,
     setTool,
     selectedObjectId,
     deleteCanvasObject,
+    duplicateCanvasObject,
     undo,
     redo,
     history,
@@ -21,11 +26,13 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
     updateCanvasObject,
     bringForward,
     sendBackward,
+    currentTime,
   } = useEditorStore();
 
-  const { saveStatus } = useProjectStore();
+  const { saveStatus, currentProject } = useProjectStore();
 
   const selectedObject = canvasObjects.find((o) => o.id === selectedObjectId);
+  const isTextObject = selectedObject?.type === 'text';
 
   const tools = [
     { id: 'select', icon: '👆', label: 'Select / Move' },
@@ -46,13 +53,40 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
     updateCanvasObject(selectedObject.id, patch);
   };
 
+  const applyMotion = (motion: string) => {
+    if (!selectedObject) return;
+    updateCanvasObject(selectedObject.id, {
+      motion: motion as MotionPreset,
+      motionStart: currentTime,
+    });
+  };
+
+  const alignCenterH = () => {
+    if (!selectedObject || !currentProject) return;
+    const w = selectedObject.width * selectedObject.scaleX;
+    updateCanvasObject(selectedObject.id, {
+      x: (currentProject.width - w) / 2,
+    });
+  };
+
+  const alignCenterV = () => {
+    if (!selectedObject || !currentProject) return;
+    const h = selectedObject.height * selectedObject.scaleY;
+    updateCanvasObject(selectedObject.id, {
+      y: (currentProject.height - h) / 2,
+    });
+  };
+
   const displayWidth = selectedObject ? Math.round(selectedObject.width * selectedObject.scaleX) : 0;
   const displayHeight = selectedObject ? Math.round(selectedObject.height * selectedObject.scaleY) : 0;
+
+  const iconBtn = (extra = '') =>
+    `w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600 transition-colors ${extra}`;
 
   return (
     <div className="bg-white border-b border-gray-200">
       {/* Main toolbar row */}
-      <div className="px-4 py-2 flex items-center gap-3 overflow-x-auto">
+      <div className="px-4 py-2 flex items-center gap-2 sm:gap-3 overflow-x-auto">
         {/* Back Button */}
         <button
           onClick={onBack}
@@ -98,7 +132,7 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
           <button
             onClick={undo}
             disabled={history.past.length === 0}
-            className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed`}
             title="Undo (Ctrl+Z)"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -117,29 +151,24 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
           </button>
         </div>
 
-        {/* Delete Selected */}
+        {/* Selected object actions */}
         {selectedObjectId && (
           <>
             <div className="h-6 w-px bg-gray-200" />
+            <button onClick={() => duplicateCanvasObject(selectedObjectId)} className={iconBtn()} title="Duplicate (Ctrl+D)">
+              ⧉
+            </button>
             <button
               onClick={() => deleteCanvasObject(selectedObjectId)}
-              className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-red-100 text-red-600"
+              className={`${iconBtn()} hover:bg-red-100 text-red-600`}
               title="Delete (Del)"
             >
               🗑️
             </button>
-            <button
-              onClick={() => selectedObject && bringForward(selectedObject.id)}
-              className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"
-              title="Bring Forward"
-            >
+            <button onClick={() => selectedObject && bringForward(selectedObject.id)} className={iconBtn()} title="Bring Forward">
               ⬆️
             </button>
-            <button
-              onClick={() => selectedObject && sendBackward(selectedObject.id)}
-              className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"
-              title="Send Backward"
-            >
+            <button onClick={() => selectedObject && sendBackward(selectedObject.id)} className={iconBtn()} title="Send Backward">
               ⬇️
             </button>
           </>
@@ -147,6 +176,15 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Manual save */}
+        <button
+          onClick={onSave}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm transition-colors whitespace-nowrap"
+          title="Save project now"
+        >
+          💾 Save
+        </button>
 
         {/* Save Status */}
         <div className="text-sm text-gray-500 flex items-center gap-2 whitespace-nowrap">
@@ -165,7 +203,7 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
           {saveStatus === 'error' && (
             <>
               <span className="text-red-500">✗</span>
-              Error saving
+              Error
             </>
           )}
         </div>
@@ -206,9 +244,7 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
               min={1}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
-                if (val > 0) {
-                  setProp({ scaleX: val / selectedObject.width });
-                }
+                if (val > 0) setProp({ scaleX: val / selectedObject.width });
               }}
               className="w-16 px-1.5 py-1 border border-gray-300 rounded text-xs"
             />
@@ -222,9 +258,7 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
               min={1}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
-                if (val > 0) {
-                  setProp({ scaleY: val / selectedObject.height });
-                }
+                if (val > 0) setProp({ scaleY: val / selectedObject.height });
               }}
               className="w-16 px-1.5 py-1 border border-gray-300 rounded text-xs"
             />
@@ -251,10 +285,40 @@ export function Toolbar({ onBack, onAddText }: ToolbarProps) {
               onChange={(e) => setProp({ opacity: parseFloat(e.target.value) })}
               className="w-20"
             />
-            <span className="text-xs text-gray-500 w-8">
-              {Math.round(selectedObject.opacity * 100)}%
-            </span>
+            <span className="text-xs text-gray-500 w-8">{Math.round(selectedObject.opacity * 100)}%</span>
           </label>
+
+          <button onClick={alignCenterH} className={`${iconBtn()} border border-gray-200`} title="Center horizontally">
+            ↔️
+          </button>
+          <button onClick={alignCenterV} className={`${iconBtn()} border border-gray-200`} title="Center vertically">
+            ↕️
+          </button>
+
+          {/* Motion preset */}
+          <label className="flex items-center gap-1 whitespace-nowrap">
+            <span className="text-gray-500 text-xs">Motion</span>
+            <select
+              value={selectedObject.motion || 'none'}
+              onChange={(e) => applyMotion(e.target.value)}
+              className="px-2 py-1 border border-gray-300 rounded text-xs bg-white"
+            >
+              {MOTION_PRESETS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.icon} {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {isTextObject && (
+            <button
+              onClick={onEditText}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg whitespace-nowrap"
+            >
+              ✏️ Edit Text
+            </button>
+          )}
         </div>
       )}
     </div>

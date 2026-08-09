@@ -18,8 +18,140 @@ import type {
   CharacterExpression,
   CharacterType,
   MouthShape,
+  MotionPreset,
   Scene,
 } from '@/types/animation';
+
+// ---------------------------------------------------------------------------
+// Watermark
+// ---------------------------------------------------------------------------
+
+export function drawWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string,
+  enabled = true
+) {
+  if (!enabled || !text) return;
+
+  const base = Math.max(width, height);
+  const fontSize = Math.max(12, base * 0.022);
+  const pad = base * 0.028;
+  const margin = base * 0.02;
+
+  ctx.save();
+  ctx.font = `600 ${fontSize}px "Noto Sans Bengali", "Hind Siliguri", "Kalpurush", "SolaimanLipi", sans-serif`;
+  const metrics = ctx.measureText(text);
+  const textW = metrics.width;
+  const pillW = textW + pad * 2;
+  const pillH = fontSize * 1.9;
+
+  // rounded pill at bottom-right corner
+  const x = width - pillW - margin;
+  const y = height - pillH - margin;
+
+  ctx.globalAlpha = 0.78;
+  ctx.fillStyle = 'rgba(10, 14, 26, 0.45)';
+  rr(ctx, x, y, pillW, pillH, pillH / 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🎬', x + pad * 0.6, y + pillH / 2);
+  ctx.fillText(text, x + pad + fontSize * 1.15, y + pillH / 2);
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Motion presets (entrance / exit effects driven by scene time)
+// ---------------------------------------------------------------------------
+
+const MOTION_DURATION = 850; // ms
+const FADE_OUT_MS = 900; // ms before scene end
+
+export interface MotionModifiers {
+  dx: number;
+  dy: number;
+  scale: number;
+  rotation: number;
+  alpha: number;
+}
+
+function easeOutCubic(p: number) {
+  return 1 - Math.pow(1 - p, 3);
+}
+
+export function getMotionModifiers(
+  obj: CanvasObject,
+  t: number,
+  sceneDuration: number,
+  playback: boolean
+): MotionModifiers {
+  const none: MotionModifiers = { dx: 0, dy: 0, scale: 1, rotation: 0, alpha: 1 };
+  if (!playback) return none;
+
+  const preset = obj.motion || 'none';
+  if (preset === 'none') return none;
+
+  const start = obj.motionStart ?? 0;
+  const w = obj.width * obj.scaleX;
+  const h = obj.height * obj.scaleY;
+
+  if (preset === 'fade-out') {
+    const dur = sceneDuration > 0 ? sceneDuration : 5000;
+    const p = clamp((t - (dur - FADE_OUT_MS)) / FADE_OUT_MS, 0, 1);
+    return { ...none, alpha: 1 - p };
+  }
+
+  const p = clamp((t - start) / MOTION_DURATION, 0, 1);
+  const e = easeOutCubic(p);
+
+  switch (preset) {
+    case 'fade-in':
+      return { ...none, alpha: p };
+    case 'slide-left':
+      return { ...none, dx: -(1 - e) * w * 0.7 };
+    case 'slide-right':
+      return { ...none, dx: (1 - e) * w * 0.7 };
+    case 'slide-up':
+      return { ...none, dy: -(1 - e) * h * 0.7 };
+    case 'slide-down':
+      return { ...none, dy: (1 - e) * h * 0.7 };
+    case 'pop-in': {
+      // overshoot scale
+      const scale = p < 0.65 ? 0.3 + 1.15 * easeOutCubic(p / 0.65) : 1.075 - 0.075 * ((p - 0.65) / 0.35);
+      return { ...none, scale };
+    }
+    case 'bounce': {
+      const bounce = Math.abs(Math.sin(p * Math.PI * 3)) * (1 - p * 0.6);
+      return { ...none, dy: -bounce * h * 0.12, scale: 0.92 + 0.08 * e };
+    }
+    case 'zoom-in':
+      return { ...none, scale: 0.4 + 0.6 * e };
+    case 'spin-in':
+      return { ...none, scale: 0.3 + 0.7 * e, rotation: (1 - e) * 360 };
+    default:
+      return none;
+  }
+}
+
+export const MOTION_PRESETS: { id: MotionPreset; label: string; icon: string }[] = [
+  { id: 'none', label: 'None', icon: '🚫' },
+  { id: 'fade-in', label: 'Fade In', icon: '🌅' },
+  { id: 'fade-out', label: 'Fade Out', icon: '🌇' },
+  { id: 'slide-left', label: 'Slide Left', icon: '⬅️' },
+  { id: 'slide-right', label: 'Slide Right', icon: '➡️' },
+  { id: 'slide-up', label: 'Slide Up', icon: '⬆️' },
+  { id: 'slide-down', label: 'Slide Down', icon: '⬇️' },
+  { id: 'pop-in', label: 'Pop In', icon: '🎉' },
+  { id: 'bounce', label: 'Bounce', icon: '🏀' },
+  { id: 'zoom-in', label: 'Zoom In', icon: '🔍' },
+  { id: 'spin-in', label: 'Spin In', icon: '🌀' },
+];
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -1213,6 +1345,10 @@ export interface DrawObjectOptions {
   interactive?: boolean;
   /** selection overlay colour */
   accent?: string;
+  /** When true (during playback/export) motion presets are animated. */
+  playback?: boolean;
+  /** Scene duration in ms (needed for fade-out). */
+  sceneDuration?: number;
 }
 
 function drawObject(
@@ -1227,13 +1363,19 @@ function drawObject(
 
   if (w <= 0 || h <= 0 || obj.opacity <= 0) return;
 
-  const centerX = obj.x + w / 2;
-  const centerY = obj.y + h / 2;
+  // Motion preset modifiers (entrance/exit effects)
+  const motion = getMotionModifiers(obj, t, opts.sceneDuration ?? 5000, opts.playback ?? false);
+  const alpha = clamp(obj.opacity * motion.alpha, 0, 1);
+  if (alpha <= 0) return;
+
+  const centerX = obj.x + w / 2 + motion.dx;
+  const centerY = obj.y + h / 2 + motion.dy;
 
   ctx.save();
   ctx.translate(centerX, centerY);
-  ctx.rotate((obj.rotation * Math.PI) / 180);
-  ctx.globalAlpha = clamp(obj.opacity, 0, 1);
+  ctx.rotate(((obj.rotation + motion.rotation) * Math.PI) / 180);
+  ctx.globalAlpha = alpha;
+  if (motion.scale !== 1) ctx.scale(motion.scale, motion.scale);
   ctx.translate(-centerX, -centerY);
 
   const action = obj.action || 'idle';
@@ -1387,6 +1529,10 @@ function drawTextObject(ctx: CanvasRenderingContext2D, obj: CanvasObject) {
 // Scene drawing (used by Canvas & ExportModal)
 // ---------------------------------------------------------------------------
 
+export interface SceneDrawOptions extends DrawObjectOptions {
+  watermark?: { text: string; enabled: boolean };
+}
+
 export function drawSceneContent(
   ctx: CanvasRenderingContext2D,
   objects: CanvasObject[],
@@ -1395,7 +1541,7 @@ export function drawSceneContent(
   lifeT: number,
   width: number,
   height: number,
-  opts: DrawObjectOptions = {}
+  opts: SceneDrawOptions = {}
 ) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = scene?.backgroundColor || '#FFFFFF';
@@ -1404,6 +1550,10 @@ export function drawSceneContent(
   const sorted = [...objects].sort((a, b) => a.zIndex - b.zIndex);
   for (const obj of sorted) {
     drawObject(ctx, obj, t, lifeT, opts);
+  }
+
+  if (opts.watermark) {
+    drawWatermark(ctx, width, height, opts.watermark.text, opts.watermark.enabled);
   }
 }
 
