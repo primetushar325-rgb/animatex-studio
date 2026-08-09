@@ -15,9 +15,10 @@ import type {
   CharacterExpression,
   CharacterAction,
   KeyframeProperties,
+  CanvasObject,
 } from '@/types/animation';
 
-type EditorTool = 'select' | 'move' | 'scale' | 'rotate' | 'text' | 'draw';
+export type EditorTool = 'select' | 'move' | 'scale' | 'rotate' | 'text' | 'draw';
 
 interface HistoryState {
   past: EditorSnapshot[];
@@ -28,25 +29,9 @@ interface EditorSnapshot {
   scenes: Scene[];
   tracks: TimelineTrack[];
   clips: TimelineClip[];
+  canvasObjects: CanvasObject[];
   selectedObjectId: string | null;
-}
-
-interface CanvasObject {
-  id: string;
-  type: 'character' | 'background' | 'prop' | 'text';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  scaleX: number;
-  scaleY: number;
-  opacity: number;
-  zIndex: number;
-  assetId?: string;
-  content?: string; // for text
-  expression?: CharacterExpression;
-  action?: CharacterAction;
+  currentSceneId: string | null;
 }
 
 interface EditorState {
@@ -128,6 +113,12 @@ interface EditorState {
   scaleObject: (id: string, scaleX: number, scaleY: number) => void;
   rotateObject: (id: string, rotation: number) => void;
   reorderObjects: (id: string, newZIndex: number) => void;
+  setObjectExpression: (id: string, expression: CharacterExpression) => void;
+  setObjectAction: (id: string, action: CharacterAction) => void;
+  /** Called once at the end of a drag/transform so undo can restore it. */
+  commitTransform: () => void;
+  bringForward: (id: string) => void;
+  sendBackward: (id: string) => void;
   
   // Actions - Assets
   addCharacter: (character: Character) => void;
@@ -229,21 +220,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   deleteScene: (sceneId: string) => {
-    const { scenes, currentSceneId, tracks, clips } = get();
+    const { scenes, currentSceneId, tracks, clips, canvasObjects } = get();
     if (scenes.length <= 1) return; // Don't delete last scene
-    
+
     const newScenes = scenes.filter((s) => s.id !== sceneId);
     const newTracks = tracks.filter((t) => t.sceneId !== sceneId);
     const trackIds = tracks.filter((t) => t.sceneId === sceneId).map((t) => t.id);
     const newClips = clips.filter((c) => !trackIds.includes(c.trackId));
-    
+    const newObjects = canvasObjects.filter((o) => o.sceneId !== sceneId);
+
     set({
       scenes: newScenes.map((s, i) => ({ ...s, order: i })),
       tracks: newTracks,
       clips: newClips,
+      canvasObjects: newObjects,
+      selectedObjectId: get().selectedObjectId,
       currentSceneId: currentSceneId === sceneId ? newScenes[0]?.id || null : currentSceneId,
     });
-    
+
     get().saveSnapshot();
   },
 
@@ -525,7 +519,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   // Canvas Actions
   addCanvasObject: (obj: Omit<CanvasObject, 'id'>) => {
-    const newObj: CanvasObject = { ...obj, id: uuidv4() };
+    const { currentSceneId } = get();
+    const newObj: CanvasObject = {
+      ...obj,
+      id: uuidv4(),
+      sceneId: currentSceneId ?? undefined,
+      scaleX: obj.scaleX ?? 1,
+      scaleY: obj.scaleY ?? 1,
+      opacity: obj.opacity ?? 1,
+      rotation: obj.rotation ?? 0,
+    };
     set((state) => ({
       canvasObjects: [...state.canvasObjects, newObj],
       selectedObjectId: newObj.id,
@@ -585,6 +588,50 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }));
   },
 
+  setObjectExpression: (id: string, expression: CharacterExpression) => {
+    set((state) => ({
+      canvasObjects: state.canvasObjects.map((obj) =>
+        obj.id === id ? { ...obj, expression } : obj
+      ),
+    }));
+  },
+
+  setObjectAction: (id: string, action: CharacterAction) => {
+    set((state) => ({
+      canvasObjects: state.canvasObjects.map((obj) =>
+        obj.id === id ? { ...obj, action } : obj
+      ),
+    }));
+  },
+
+  commitTransform: () => {
+    get().saveSnapshot();
+  },
+
+  bringForward: (id: string) => {
+    const { canvasObjects } = get();
+    const obj = canvasObjects.find((o) => o.id === id);
+    if (!obj) return;
+    const maxZ = Math.max(...canvasObjects.map((o) => o.zIndex), obj.zIndex);
+    set((state) => ({
+      canvasObjects: state.canvasObjects.map((o) =>
+        o.id === id ? { ...o, zIndex: maxZ + 1 } : o
+      ),
+    }));
+  },
+
+  sendBackward: (id: string) => {
+    const { canvasObjects } = get();
+    const obj = canvasObjects.find((o) => o.id === id);
+    if (!obj) return;
+    const minZ = Math.min(...canvasObjects.map((o) => o.zIndex), obj.zIndex);
+    set((state) => ({
+      canvasObjects: state.canvasObjects.map((o) =>
+        o.id === id ? { ...o, zIndex: minZ - 1 } : o
+      ),
+    }));
+  },
+
   // Asset Actions
   addCharacter: (character: Character) => {
     set((state) => ({ characters: [...state.characters, character] }));
@@ -627,22 +674,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   undo: () => {
     const { history } = get();
     if (history.past.length === 0) return;
-    
+
     const previous = history.past[history.past.length - 1];
     const newPast = history.past.slice(0, -1);
-    
+
     const currentSnapshot: EditorSnapshot = {
       scenes: get().scenes,
       tracks: get().tracks,
       clips: get().clips,
+      canvasObjects: get().canvasObjects,
       selectedObjectId: get().selectedObjectId,
+      currentSceneId: get().currentSceneId,
     };
-    
+
     set({
       scenes: previous.scenes,
       tracks: previous.tracks,
       clips: previous.clips,
+      canvasObjects: previous.canvasObjects,
       selectedObjectId: previous.selectedObjectId,
+      currentSceneId: previous.currentSceneId,
       history: {
         past: newPast,
         future: [currentSnapshot, ...history.future],
@@ -653,22 +704,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   redo: () => {
     const { history } = get();
     if (history.future.length === 0) return;
-    
+
     const next = history.future[0];
     const newFuture = history.future.slice(1);
-    
+
     const currentSnapshot: EditorSnapshot = {
       scenes: get().scenes,
       tracks: get().tracks,
       clips: get().clips,
+      canvasObjects: get().canvasObjects,
       selectedObjectId: get().selectedObjectId,
+      currentSceneId: get().currentSceneId,
     };
-    
+
     set({
       scenes: next.scenes,
       tracks: next.tracks,
       clips: next.clips,
+      canvasObjects: next.canvasObjects,
       selectedObjectId: next.selectedObjectId,
+      currentSceneId: next.currentSceneId,
       history: {
         past: [...history.past, currentSnapshot],
         future: newFuture,
@@ -677,17 +732,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   saveSnapshot: () => {
-    const { scenes, tracks, clips, selectedObjectId, history } = get();
-    
+    const { scenes, tracks, clips, canvasObjects, selectedObjectId, currentSceneId, history } = get();
+
     const snapshot: EditorSnapshot = {
       scenes: JSON.parse(JSON.stringify(scenes)),
       tracks: JSON.parse(JSON.stringify(tracks)),
       clips: JSON.parse(JSON.stringify(clips)),
+      canvasObjects: JSON.parse(JSON.stringify(canvasObjects)),
       selectedObjectId,
+      currentSceneId,
     };
-    
+
     const newPast = [...history.past, snapshot].slice(-MAX_HISTORY_SIZE);
-    
+
     set({
       history: {
         past: newPast,
@@ -748,7 +805,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   loadEditorState: (state: Partial<EditorState>) => {
-    set(state);
+    const currentSceneId = state.currentSceneId ?? get().currentSceneId;
+    // Migrate old objects that have no sceneId so they never get lost.
+    const canvasObjects = (state.canvasObjects ?? get().canvasObjects).map((obj) => ({
+      ...obj,
+      sceneId: obj.sceneId ?? currentSceneId ?? undefined,
+      scaleX: obj.scaleX ?? 1,
+      scaleY: obj.scaleY ?? 1,
+      opacity: obj.opacity ?? 1,
+    }));
+    set({ ...state, canvasObjects });
   },
 
   getEditorState: () => {
@@ -763,6 +829,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       props: state.props,
       audioClips: state.audioClips,
       textElements: state.textElements,
+      currentSceneId: state.currentSceneId,
+      selectedObjectId: state.selectedObjectId,
+      currentTime: state.currentTime,
     };
   },
 }));

@@ -174,3 +174,37 @@ curl -X POST https://your-domain.com/api/admin/setup \
 ## License
 
 MIT
+
+---
+
+## 🆕 Editor Update (2026-08)
+
+Professional editor overhaul — the canvas, timeline and export now actually do what the UI promises.
+
+### What was fixed / added
+
+1. **Interactive resize handles** — select any object and drag the corner handles to scale (aspect ratio locked), the edge handles for one-axis scaling, or the round handle above to rotate. Works with mouse AND touch.
+2. **Scale & Rotate tools** — the toolbar tools now work: select `📐 Scale` and drag to scale from the center, select `🔄 Rotate` and drag to spin around the center.
+3. **Distinct characters** — every character type (boy, girl, child, man, woman, old-man, old-woman, dog, cat, bird, cow, goat) now has its own shape, colors, hair, glasses, ears, horns etc. No more identical stick figures.
+4. **Action animations** — idle, walk, run, jump, sit, stand, wave, talk, point, clap, cry, laugh, dance, fall all animate limbs via `requestAnimationFrame`; press play in the timeline to see them move. Expressions render on the face (happy, sad, angry, scared, surprised, laughing, crying, thinking, sleepy…).
+5. **Expressions & Actions are real buttons** — select an object, open the Assets panel and click an expression or action to apply it instantly (active state is highlighted).
+6. **Custom uploads (Cloudinary)** — `+ Upload Custom Character/Background/Prop` now actually uploads the file to `/api/upload`, saves the returned URL on the canvas object, and the canvas draws the real image (`drawImage`). Uploaded assets are remembered in "My Characters/Backgrounds/Props".
+7. **Objects are scene-scoped** — each scene now keeps its own objects; switching scenes no longer mixes elements.
+8. **Drafts are restored on refresh** — objects no longer disappear when you reload the editor.
+9. **Undo/Redo covers canvas edits** — moves, resizes, rotations, additions and deletions can all be undone (Ctrl+Z / Ctrl+Shift+Z).
+10. **Timeline ↔ canvas selection sync** — clicking a clip selects its object; clips show readable names and can be deleted.
+11. **Professional export** — exports render the real characters, animations, images and text (not colored rectangles), scene by scene, at the project's aspect ratio.
+12. **Toolbar properties** — X / Y / W / H / rotation / opacity inputs for the selected object, plus bring-forward / send-backward layers.
+13. **Audio upload** — upload MP3/WAV/M4A/OGG in the Assets → Audio tab (added to the Voice track).
+14. **Keyboard** — arrow keys nudge the selected object (Shift = 1px), Delete removes it, Space plays/pauses, Ctrl+Z undo.
+
+### Setup notes
+
+- **Cloudinary (required for custom uploads):** add these to your Vercel project / `.env`:
+  ```
+  CLOUDINARY_CLOUD_NAME=...
+  CLOUDINARY_API_KEY=...
+  CLOUDINARY_API_SECRET=...
+  ```
+  Without them the upload buttons show a friendly error instead of crashing.
+- TypeScript strict typechecking (`npm run typecheck`) and ESLint (`npm run lint`) pass clean.

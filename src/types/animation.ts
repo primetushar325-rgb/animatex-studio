@@ -154,6 +154,41 @@ export interface BoneTransform {
   scaleY: number;
 }
 
+// Canvas Objects (elements placed on the stage)
+export type CanvasObjectType = 'character' | 'background' | 'prop' | 'text';
+
+export interface CanvasObject {
+  id: string;
+  /** Scene this object belongs to. Filled automatically when added. */
+  sceneId?: string;
+  type: CanvasObjectType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  opacity: number;
+  zIndex: number;
+  assetId?: string;
+  /** Text content for text objects */
+  content?: string;
+  expression?: CharacterExpression;
+  action?: CharacterAction;
+  characterType?: CharacterType;
+  /** Custom uploaded image (Cloudinary URL) */
+  imageUrl?: string;
+  /** Human friendly name (asset name) */
+  name?: string;
+  /** Optional tint for props/backgrounds */
+  color?: string;
+  /** Font size override for text objects */
+  fontSize?: number;
+  fontColor?: string;
+  fontWeight?: string;
+}
+
 // Backgrounds
 export interface Background {
   id: string;

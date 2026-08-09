@@ -7,11 +7,11 @@ import { useProjectStore } from '@/store/project-store';
 import { Canvas } from './Canvas';
 import { Timeline } from './Timeline';
 import { Toolbar } from './Toolbar';
-import { AssetPanel } from './AssetPanel';
+import { AssetPanel, type AssetTab } from './AssetPanel';
 import { ScenePanel } from './ScenePanel';
 import { VoiceRecorder } from './VoiceRecorder';
 import { ExportModal } from './ExportModal';
-import { saveDraft } from '@/lib/storage/indexeddb';
+import { saveDraft, getDraft } from '@/lib/storage/indexeddb';
 import { Logo } from '@/components/brand/Logo';
 
 interface EditorProps {
@@ -22,45 +22,100 @@ interface EditorProps {
 export function Editor({ projectId, autoExport = false }: EditorProps) {
   const router = useRouter();
   const [showAssetPanel, setShowAssetPanel] = useState(false);
+  const [assetInitialTab, setAssetInitialTab] = useState<AssetTab>('characters');
   const [showScenePanel, setShowScenePanel] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [showExportModal, setShowExportModal] = useState(autoExport);
 
-  const { initializeEditor, getEditorState, scenes, currentSceneId, showTimeline, toggleTimeline } = useEditorStore();
+  const {
+    initializeEditor,
+    loadEditorState,
+    getEditorState,
+    scenes,
+    currentSceneId,
+    showTimeline,
+    toggleTimeline,
+    canvasObjects,
+    clips,
+    tracks,
+    characters,
+    backgrounds,
+    props,
+    audioClips,
+    textElements,
+  } = useEditorStore();
   const { openProject, currentProject, saveProject } = useProjectStore();
 
-  // Initialize editor
+  // Initialize editor + restore any saved draft (fixes objects disappearing on refresh)
   useEffect(() => {
     const init = async () => {
       await openProject(projectId);
       initializeEditor(projectId);
+
+      try {
+        const draft = (await getDraft(projectId)) as {
+          scenes?: unknown[];
+          tracks?: unknown[];
+          clips?: unknown[];
+          canvasObjects?: unknown[];
+          characters?: unknown[];
+          backgrounds?: unknown[];
+          props?: unknown[];
+          audioClips?: unknown[];
+          textElements?: unknown[];
+          currentSceneId?: string | null;
+          selectedObjectId?: string | null;
+          currentTime?: number;
+        } | null;
+
+        if (draft && draft.canvasObjects && draft.scenes) {
+          loadEditorState(draft as Parameters<typeof loadEditorState>[0]);
+        }
+      } catch (err) {
+        console.warn('Failed to restore draft', err);
+      }
     };
     init();
-  }, [projectId, openProject, initializeEditor]);
+  }, [projectId, openProject, initializeEditor, loadEditorState]);
 
-  // Auto-save
+  // Auto-save (debounced)
   const handleAutoSave = useCallback(async () => {
     if (!currentProject) return;
-    
+
     const editorState = getEditorState();
     await saveDraft(projectId, editorState);
-    
+
     await saveProject({
       sceneCount: scenes.length,
       duration: scenes.reduce((total, scene) => total + scene.duration, 0),
     });
   }, [currentProject, projectId, saveProject, scenes, getEditorState]);
 
-  // Auto-save on changes (debounced)
   useEffect(() => {
-    const timeout = setTimeout(handleAutoSave, 3000);
+    if (!currentProject) return;
+    const timeout = setTimeout(handleAutoSave, 2500);
     return () => clearTimeout(timeout);
-  }, [scenes, handleAutoSave]);
+  }, [
+    scenes,
+    canvasObjects,
+    clips,
+    tracks,
+    characters,
+    backgrounds,
+    props,
+    audioClips,
+    textElements,
+    handleAutoSave,
+    currentProject,
+  ]);
 
-  // Handle keyboard shortcuts
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
       if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         if (e.shiftKey) {
@@ -69,15 +124,33 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
           useEditorStore.getState().undo();
         }
       }
-      if (e.key === ' ') {
+      if (e.key === ' ' && !typing) {
         e.preventDefault();
         useEditorStore.getState().togglePlay();
       }
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing) {
         const { selectedObjectId, deleteCanvasObject } = useEditorStore.getState();
-        if (selectedObjectId && document.activeElement?.tagName !== 'INPUT') {
+        if (selectedObjectId) {
           e.preventDefault();
           deleteCanvasObject(selectedObjectId);
+        }
+      }
+      // Arrow key nudging
+      if (!typing && e.key.startsWith('Arrow')) {
+        const { selectedObjectId, canvasObjects, updateCanvasObject } = useEditorStore.getState();
+        const obj = canvasObjects.find((o) => o.id === selectedObjectId);
+        if (obj) {
+          e.preventDefault();
+          const step = e.shiftKey ? 1 : 5;
+          const delta =
+            e.key === 'ArrowLeft'
+              ? { x: obj.x - step }
+              : e.key === 'ArrowRight'
+              ? { x: obj.x + step }
+              : e.key === 'ArrowUp'
+              ? { y: obj.y - step }
+              : { y: obj.y + step };
+          updateCanvasObject(obj.id, delta);
         }
       }
     };
@@ -85,6 +158,11 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  const openAssetTab = (tab: AssetTab) => {
+    setAssetInitialTab(tab);
+    setShowAssetPanel(true);
+  };
 
   const handleBack = () => {
     handleAutoSave();
@@ -105,7 +183,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
   return (
     <div className="h-screen flex flex-col bg-slate-900 overflow-hidden">
       {/* Toolbar */}
-      <Toolbar onBack={handleBack} />
+      <Toolbar onBack={handleBack} onAddText={() => openAssetTab('text')} />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -129,7 +207,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
           {/* Quick Actions */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowAssetPanel(true)}
+              onClick={() => openAssetTab('characters')}
               className="w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700 rounded-lg text-white transition-colors"
               title="Add Assets"
             >
@@ -173,14 +251,22 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       </div>
 
       {/* Panels */}
-      <AssetPanel isOpen={showAssetPanel} onClose={() => setShowAssetPanel(false)} />
+      <AssetPanel
+        isOpen={showAssetPanel}
+        onClose={() => setShowAssetPanel(false)}
+        initialTab={assetInitialTab}
+        onRecordVoice={() => setShowVoiceRecorder(true)}
+      />
       <ScenePanel isOpen={showScenePanel} onClose={() => setShowScenePanel(false)} />
       <VoiceRecorder isOpen={showVoiceRecorder} onClose={() => setShowVoiceRecorder(false)} />
       <ExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} />
 
       {/* AI Panel */}
       {showAIPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowAIPanel(false)}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setShowAIPanel(false)}
+        >
           <div
             className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}

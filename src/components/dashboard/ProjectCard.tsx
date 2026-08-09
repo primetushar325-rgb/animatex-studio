@@ -64,6 +64,7 @@ export function ProjectCard({
         onClick={onOpen}
       >
         {project.thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={project.thumbnail}
             alt={project.name}

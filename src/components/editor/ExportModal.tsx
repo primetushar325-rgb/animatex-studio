@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
+import { drawSceneContent, preloadImages } from '@/lib/editor/renderer';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -16,7 +17,6 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const [resolution, setResolution] = useState<Resolution>('720p');
   const [fps, setFps] = useState<24 | 30 | 60>(30);
   const [quality, setQuality] = useState<Quality>('medium');
-  const [includeAudio, setIncludeAudio] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState<string>('');
@@ -26,18 +26,28 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const { scenes, canvasObjects } = useEditorStore();
+  const { scenes, canvasObjects, characters } = useEditorStore();
   const { currentProject } = useProjectStore();
 
-  const getResolutionDimensions = (res: Resolution) => {
-    switch (res) {
-      case '480p':
-        return { width: 480, height: 854 };
-      case '720p':
-        return { width: 720, height: 1280 };
-      case '1080p':
-        return { width: 1080, height: 1920 };
+  const projectW = currentProject?.width || 1080;
+  const projectH = currentProject?.height || 1920;
+
+  // Reset state when reopened
+  useEffect(() => {
+    if (isOpen) {
+      setExporting(false);
+      setProgress(0);
+      setStage('');
+      setExportUrl(null);
     }
+  }, [isOpen]);
+
+  const getResolutionDimensions = (res: Resolution) => {
+    const baseWidth = res === '480p' ? 480 : res === '720p' ? 720 : 1080;
+    return {
+      width: baseWidth,
+      height: Math.round((baseWidth * projectH) / projectW),
+    };
   };
 
   const handleExport = async () => {
@@ -59,10 +69,13 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Canvas context not available');
 
+      // Load every custom image before recording starts
+      setStage('Loading assets...');
+      await preloadImages(canvasObjects);
+
       // Get canvas stream
       const stream = canvas.captureStream(fps);
 
-      // Create MediaRecorder
       const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
         ? 'video/webm;codecs=vp9'
         : 'video/webm';
@@ -90,12 +103,10 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 
       mediaRecorder.start(100);
 
-      // Render frames
+      // Render frames — real characters, images, text via the shared renderer
       const totalDuration = scenes.reduce((t, s) => t + s.duration, 0);
-      const totalFrames = Math.ceil((totalDuration / 1000) * fps);
+      const totalFrames = Math.max(1, Math.ceil((totalDuration / 1000) * fps));
       let currentFrame = 0;
-      let currentSceneIndex = 0;
-      let sceneStartFrame = 0;
 
       const renderFrame = () => {
         if (currentFrame >= totalFrames) {
@@ -104,56 +115,35 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
         }
 
         const frameTime = (currentFrame / fps) * 1000;
-        
-        // Find current scene
-        let accumulatedDuration = 0;
+
+        // Find the scene for this frame
+        let accumulated = 0;
+        let sceneIndex = 0;
+        let timeInScene = 0;
         for (let i = 0; i < scenes.length; i++) {
-          if (frameTime < accumulatedDuration + scenes[i].duration) {
-            currentSceneIndex = i;
-            sceneStartFrame = Math.floor((accumulatedDuration / 1000) * fps);
+          const dur = scenes[i].duration;
+          if (frameTime < accumulated + dur) {
+            sceneIndex = i;
+            timeInScene = frameTime - accumulated;
             break;
           }
-          accumulatedDuration += scenes[i].duration;
+          accumulated += dur;
+          sceneIndex = i;
+          timeInScene = Math.min(frameTime - accumulated, scenes[i].duration);
         }
 
-        const scene = scenes[currentSceneIndex];
-        setStage(`Rendering Scene ${currentSceneIndex + 1}/${scenes.length}`);
+        const scene = scenes[sceneIndex];
+        setStage(`Rendering Scene ${sceneIndex + 1}/${scenes.length}`);
         setProgress(Math.round((currentFrame / totalFrames) * 100));
 
-        // Clear canvas
-        ctx.fillStyle = scene?.backgroundColor || '#FFFFFF';
-        ctx.fillRect(0, 0, width, height);
+        // Scale from project space to export resolution
+        ctx.save();
+        ctx.scale(width / projectW, height / projectH);
 
-        // Draw objects (simplified)
-        const sortedObjects = [...canvasObjects].sort((a, b) => a.zIndex - b.zIndex);
-        
-        for (const obj of sortedObjects) {
-          ctx.save();
-          ctx.globalAlpha = obj.opacity;
+        const sceneObjects = canvasObjects.filter((o) => o.sceneId === scene?.id);
+        drawSceneContent(ctx, sceneObjects, scene, timeInScene, timeInScene, projectW, projectH);
 
-          // Scale to export resolution
-          const scaleX = width / (currentProject?.width || 1080);
-          const scaleY = height / (currentProject?.height || 1920);
-
-          const drawX = obj.x * scaleX;
-          const drawY = obj.y * scaleY;
-          const drawWidth = obj.width * obj.scaleX * scaleX;
-          const drawHeight = obj.height * obj.scaleY * scaleY;
-
-          // Draw placeholder shapes
-          if (obj.type === 'character') {
-            ctx.fillStyle = '#FF69B4';
-          } else if (obj.type === 'background') {
-            ctx.fillStyle = '#32CD32';
-          } else if (obj.type === 'prop') {
-            ctx.fillStyle = '#4169E1';
-          } else {
-            ctx.fillStyle = '#FFD700';
-          }
-
-          ctx.fillRect(drawX, drawY, drawWidth, drawHeight);
-          ctx.restore();
-        }
+        ctx.restore();
 
         currentFrame++;
         requestAnimationFrame(renderFrame);
@@ -213,7 +203,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={handleClose}>
       <div
-        className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl"
+        className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">
@@ -243,6 +233,10 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                   </button>
                 ))}
               </div>
+              <p className="text-xs text-gray-400 mt-1">
+                {getResolutionDimensions(resolution).width}×
+                {getResolutionDimensions(resolution).height} ({currentProject?.canvasRatio})
+              </p>
             </div>
 
             {/* FPS */}
@@ -285,21 +279,12 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
               </div>
             </div>
 
-            {/* Audio Toggle */}
-            <div className="flex items-center justify-between py-2">
-              <span className="font-medium text-gray-700">Include Audio</span>
-              <button
-                onClick={() => setIncludeAudio(!includeAudio)}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  includeAudio ? 'bg-blue-500' : 'bg-gray-300'
-                }`}
-              >
-                <span
-                  className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                    includeAudio ? 'left-7' : 'left-1'
-                  }`}
-                />
-              </button>
+            {/* Scenes info */}
+            <div className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg text-sm text-gray-600">
+              <span>Scenes</span>
+              <span className="font-medium">{scenes.length}</span>
+              <span>Characters</span>
+              <span className="font-medium">{characters.length}</span>
             </div>
 
             <button
@@ -332,7 +317,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
             <div className="text-6xl mb-4">✅</div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Export Complete!</h3>
             <p className="text-gray-600 mb-6">Your video is ready to download or share.</p>
-            
+
             <div className="flex gap-3">
               <button
                 onClick={handleDownload}

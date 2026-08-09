@@ -3,109 +3,79 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
+import {
+  drawSceneContent,
+  drawSelectionOverlay,
+  getSelectionHandles,
+  getImage,
+} from '@/lib/editor/renderer';
+import type { CanvasObject } from '@/types/animation';
 
 interface Point {
   x: number;
   y: number;
 }
 
-// Draws a simple stick-figure style character inside the given box
-function drawCharacter(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  const skin = '#F4C2A1';
-  const shirt = '#4A90D9';
-  const pants = '#3B4A6B';
-  const cx = x + w / 2;
+type DragMode =
+  | 'move'
+  | 'scale-tool'
+  | 'rotate-tool'
+  | 'resize'
+  | 'rotate-handle'
+  | null;
 
-  const headR = w * 0.18;
-  const headCY = y + headR + h * 0.02;
-  const neckY = headCY + headR;
-  const shoulderY = neckY + h * 0.02;
-  const hipY = y + h * 0.58;
-  const handY = hipY - h * 0.02;
-  const footY = y + h * 0.98;
-
-  const shoulderW = w * 0.34;
-  const hipW = w * 0.24;
-
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  // Legs
-  ctx.strokeStyle = pants;
-  ctx.lineWidth = w * 0.14;
-  ctx.beginPath();
-  ctx.moveTo(cx - hipW / 2, hipY);
-  ctx.lineTo(cx - hipW / 2, footY);
-  ctx.moveTo(cx + hipW / 2, hipY);
-  ctx.lineTo(cx + hipW / 2, footY);
-  ctx.stroke();
-
-  // Arms
-  ctx.strokeStyle = skin;
-  ctx.lineWidth = w * 0.1;
-  ctx.beginPath();
-  ctx.moveTo(cx - shoulderW / 2, shoulderY);
-  ctx.lineTo(cx - shoulderW / 2 - w * 0.06, handY);
-  ctx.moveTo(cx + shoulderW / 2, shoulderY);
-  ctx.lineTo(cx + shoulderW / 2 + w * 0.06, handY);
-  ctx.stroke();
-
-  // Body (torso)
-  ctx.fillStyle = shirt;
-  ctx.beginPath();
-  ctx.moveTo(cx - shoulderW / 2, shoulderY);
-  ctx.lineTo(cx + shoulderW / 2, shoulderY);
-  ctx.lineTo(cx + hipW / 2, hipY);
-  ctx.lineTo(cx - hipW / 2, hipY);
-  ctx.closePath();
-  ctx.fill();
-
-  // Head
-  ctx.fillStyle = skin;
-  ctx.beginPath();
-  ctx.arc(cx, headCY, headR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Simple face
-  ctx.fillStyle = '#333';
-  const eyeOffset = headR * 0.35;
-  const eyeR = headR * 0.08;
-  ctx.beginPath();
-  ctx.arc(cx - eyeOffset, headCY - headR * 0.05, eyeR, 0, Math.PI * 2);
-  ctx.arc(cx + eyeOffset, headCY - headR * 0.05, eyeR, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = Math.max(1, headR * 0.06);
-  ctx.beginPath();
-  ctx.arc(cx, headCY + headR * 0.15, headR * 0.3, 0.15 * Math.PI, 0.85 * Math.PI);
-  ctx.stroke();
+interface DragState {
+  mode: DragMode;
+  pointerId: number;
+  start: Point;
+  objStart: {
+    x: number;
+    y: number;
+    scaleX: number;
+    scaleY: number;
+    rotation: number;
+    width: number;
+    height: number;
+  };
+  handle?: { id: 'tl' | 'tr' | 'bl' | 'br' | 'n' | 's' | 'e' | 'w' };
+  anchor?: Point;
+  startAngle?: number;
 }
+
+const HANDLE_HIT_PX = 12;
 
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState<Point>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState<Point>({ x: 0, y: 0 });
-  const [objectDragStart, setObjectDragStart] = useState<Point | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const animClockRef = useRef(0);
+  const lastFrameRef = useRef(0);
 
   const {
     canvasObjects,
     selectedObjectId,
     selectObject,
     updateCanvasObject,
+    commitTransform,
     activeTool,
     currentSceneId,
     scenes,
+    currentTime,
+    isPlaying,
   } = useEditorStore();
 
   const { currentProject } = useProjectStore();
 
   const currentScene = scenes.find((s) => s.id === currentSceneId);
+  // Objects are scoped per scene
+  const sceneObjects = canvasObjects.filter((o) => o.sceneId === currentSceneId);
+  const selectedObject = sceneObjects.find((o) => o.id === selectedObjectId) || null;
 
-  // Draw canvas
+  // -------------------------------------------------------------------------
+  // Drawing
+  // -------------------------------------------------------------------------
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !currentProject) return;
@@ -113,109 +83,50 @@ export function Canvas() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const t = isPlaying ? currentTime : 0;
+    drawSceneContent(
+      ctx,
+      sceneObjects,
+      currentScene,
+      t,
+      animClockRef.current,
+      canvas.width,
+      canvas.height
+    );
 
-    // Draw background
-    ctx.fillStyle = currentScene?.backgroundColor || '#FFFFFF';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Sort objects by z-index
-    const sortedObjects = [...canvasObjects].sort((a, b) => a.zIndex - b.zIndex);
-
-    // Draw each object
-    for (const obj of sortedObjects) {
-      ctx.save();
-
-      // Apply transformations
-      const centerX = obj.x + (obj.width * obj.scaleX) / 2;
-      const centerY = obj.y + (obj.height * obj.scaleY) / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate((obj.rotation * Math.PI) / 180);
-      ctx.globalAlpha = obj.opacity;
-      ctx.translate(-centerX, -centerY);
-
-      // Draw based on type
-      if (obj.type === 'character') {
-        drawCharacter(ctx, obj.x, obj.y, obj.width * obj.scaleX, obj.height * obj.scaleY);
-      } else if (obj.type === 'background' || obj.type === 'prop') {
-        const gradient = ctx.createLinearGradient(obj.x, obj.y, obj.x + obj.width * obj.scaleX, obj.y + obj.height * obj.scaleY);
-
-        if (obj.type === 'background') {
-          gradient.addColorStop(0, '#98FB98');
-          gradient.addColorStop(1, '#32CD32');
-        } else {
-          gradient.addColorStop(0, '#87CEEB');
-          gradient.addColorStop(1, '#4169E1');
-        }
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(obj.x, obj.y, obj.width * obj.scaleX, obj.height * obj.scaleY);
-
-        // Draw icon
-        ctx.fillStyle = 'white';
-        ctx.font = `${Math.min(obj.width * obj.scaleX, obj.height * obj.scaleY) * 0.3}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const icon = obj.type === 'background' ? '🏞️' : '📦';
-        ctx.fillText(icon, centerX, centerY);
-      } else if (obj.type === 'text' && obj.content) {
-        ctx.font = '24px sans-serif';
-        ctx.fillStyle = '#333';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillText(obj.content, obj.x, obj.y);
-      }
-
-      // Draw selection border
-      if (selectedObjectId === obj.id) {
-        ctx.strokeStyle = '#3B82F6';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(
-          obj.x - 2,
-          obj.y - 2,
-          obj.width * obj.scaleX + 4,
-          obj.height * obj.scaleY + 4
-        );
-
-        // Draw resize handles
-        const handleSize = 8;
-        ctx.fillStyle = '#3B82F6';
-        ctx.setLineDash([]);
-
-        // Corner handles
-        const corners = [
-          { x: obj.x - handleSize / 2, y: obj.y - handleSize / 2 },
-          { x: obj.x + obj.width * obj.scaleX - handleSize / 2, y: obj.y - handleSize / 2 },
-          { x: obj.x - handleSize / 2, y: obj.y + obj.height * obj.scaleY - handleSize / 2 },
-          { x: obj.x + obj.width * obj.scaleX - handleSize / 2, y: obj.y + obj.height * obj.scaleY - handleSize / 2 },
-        ];
-
-        corners.forEach((corner) => {
-          ctx.fillRect(corner.x, corner.y, handleSize, handleSize);
-        });
-      }
-
-      ctx.restore();
+    // Selection overlay (always on top, outside rotation)
+    if (selectedObject) {
+      drawSelectionOverlay(ctx, selectedObject);
     }
-  }, [canvasObjects, selectedObjectId, currentProject, currentScene]);
+  }, [sceneObjects, selectedObject, currentScene, currentProject, isPlaying, currentTime]);
 
-  // Animation loop
+  // Animation loop — also advances the "life" clock for idle breathing
   useEffect(() => {
     let animationId: number;
 
-    const animate = () => {
+    const animate = (now: number) => {
+      const delta = lastFrameRef.current ? now - lastFrameRef.current : 16;
+      lastFrameRef.current = now;
+      animClockRef.current += delta;
       draw();
       animationId = requestAnimationFrame(animate);
     };
 
-    animate();
+    animationId = requestAnimationFrame(animate);
 
     return () => {
       cancelAnimationFrame(animationId);
     };
   }, [draw]);
+
+  // Load images for the current scene (custom uploads)
+  useEffect(() => {
+    sceneObjects.forEach((obj) => {
+      if (obj.imageUrl) {
+        getImage(obj.imageUrl).catch(() => null);
+      }
+    });
+  }, [sceneObjects]);
 
   // Handle resize
   useEffect(() => {
@@ -249,134 +160,344 @@ export function Canvas() {
     return () => window.removeEventListener('resize', updateSize);
   }, [currentProject]);
 
-  // Get canvas coordinates from mouse/touch event
-  const getCanvasCoords = (clientX: number, clientY: number): Point => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+  // -------------------------------------------------------------------------
+  // Coordinate helpers
+  // -------------------------------------------------------------------------
 
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left) / scale,
-      y: (clientY - rect.top) / scale,
+  const getCanvasCoords = useCallback(
+    (clientX: number, clientY: number): Point => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (clientX - rect.left) / scale,
+        y: (clientY - rect.top) / scale,
+      };
+    },
+    [scale]
+  );
+
+  const findObjectAtPosition = useCallback(
+    (x: number, y: number): CanvasObject | null => {
+      const sorted = [...sceneObjects].sort((a, b) => b.zIndex - a.zIndex);
+      for (const obj of sorted) {
+        const w = obj.width * obj.scaleX;
+        const h = obj.height * obj.scaleY;
+        // rotate hit-testing: rotate the point into object space
+        const cx = obj.x + w / 2;
+        const cy = obj.y + h / 2;
+        const rad = (-obj.rotation * Math.PI) / 180;
+        const dx = x - cx;
+        const dy = y - cy;
+        const lx = dx * Math.cos(rad) - dy * Math.sin(rad) + cx;
+        const ly = dx * Math.sin(rad) + dy * Math.cos(rad) + cy;
+        if (
+          lx >= obj.x &&
+          lx <= obj.x + w &&
+          ly >= obj.y &&
+          ly <= obj.y + h
+        ) {
+          return obj;
+        }
+      }
+      return null;
+    },
+    [sceneObjects]
+  );
+
+  const hitTestHandles = useCallback(
+    (obj: CanvasObject, x: number, y: number): DragState['handle'] | 'rotate' | null => {
+      const tol = HANDLE_HIT_PX / scale;
+      const handles = getSelectionHandles(obj);
+
+      if (Math.hypot(x - handles.rotate.x, y - handles.rotate.y) <= tol + 4) {
+        return 'rotate';
+      }
+      for (const c of handles.corners) {
+        if (Math.abs(x - c.x) <= tol && Math.abs(y - c.y) <= tol) return { id: c.id };
+      }
+      for (const e of handles.edges) {
+        if (Math.abs(x - e.x) <= tol && Math.abs(y - e.y) <= tol) return { id: e.id };
+      }
+      return null;
+    },
+    [scale]
+  );
+
+  const getCursorForHandle = (handle: string | null) => {
+    switch (handle) {
+      case 'tl':
+      case 'br':
+        return 'nwse-resize';
+      case 'tr':
+      case 'bl':
+        return 'nesw-resize';
+      case 'n':
+      case 's':
+        return 'ns-resize';
+      case 'e':
+      case 'w':
+        return 'ew-resize';
+      case 'rotate':
+        return 'grab';
+      default:
+        return activeTool === 'rotate' ? 'grab' : activeTool === 'scale' ? 'nwse-resize' : 'move';
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Pointer handling (mouse + touch unified)
+  // -------------------------------------------------------------------------
+
+  const startDrag = (
+    obj: CanvasObject,
+    mode: DragMode,
+    pointerId: number,
+    point: Point,
+    handle?: DragState['handle'],
+    anchor?: Point
+  ) => {
+    dragRef.current = {
+      mode,
+      pointerId,
+      start: point,
+      objStart: {
+        x: obj.x,
+        y: obj.y,
+        scaleX: obj.scaleX,
+        scaleY: obj.scaleY,
+        rotation: obj.rotation,
+        width: obj.width,
+        height: obj.height,
+      },
+      handle,
+      anchor,
+      startAngle: Math.atan2(
+        point.y - (obj.y + (obj.height * obj.scaleY) / 2),
+        point.x - (obj.x + (obj.width * obj.scaleX) / 2)
+      ),
     };
   };
 
-  // Find object at position
-  const findObjectAtPosition = (x: number, y: number) => {
-    const sortedObjects = [...canvasObjects].sort((a, b) => b.zIndex - a.zIndex);
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
 
-    for (const obj of sortedObjects) {
-      if (
-        x >= obj.x &&
-        x <= obj.x + obj.width * obj.scaleX &&
-        y >= obj.y &&
-        y <= obj.y + obj.height * obj.scaleY
-      ) {
-        return obj;
+    const point = getCanvasCoords(e.clientX, e.clientY);
+
+    // 1) Handles of the currently selected object win over everything
+    if (selectedObject) {
+      const hit = hitTestHandles(selectedObject, point.x, point.y);
+      if (hit === 'rotate') {
+        startDrag(selectedObject, 'rotate-handle', e.pointerId, point);
+        return;
+      }
+      if (hit && hit.id) {
+        const w = selectedObject.width * selectedObject.scaleX;
+        const h = selectedObject.height * selectedObject.scaleY;
+        const anchor =
+          hit.id === 'tl'
+            ? { x: selectedObject.x + w, y: selectedObject.y + h }
+            : hit.id === 'tr'
+            ? { x: selectedObject.x, y: selectedObject.y + h }
+            : hit.id === 'bl'
+            ? { x: selectedObject.x + w, y: selectedObject.y }
+            : hit.id === 'br'
+            ? { x: selectedObject.x, y: selectedObject.y }
+            : null;
+        startDrag(selectedObject, 'resize', e.pointerId, point, hit, anchor || undefined);
+        return;
       }
     }
-    return null;
-  };
 
-  // Mouse handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    const coords = getCanvasCoords(e.clientX, e.clientY);
-    const obj = findObjectAtPosition(coords.x, coords.y);
-
+    // 2) Object hit test
+    const obj = findObjectAtPosition(point.x, point.y);
     if (obj) {
-      selectObject(obj.id);
-      setObjectDragStart(coords);
+      if (obj.id !== selectedObjectId) {
+        selectObject(obj.id);
+      }
+      if (activeTool === 'scale') {
+        startDrag(obj, 'scale-tool', e.pointerId, point);
+      } else if (activeTool === 'rotate') {
+        startDrag(obj, 'rotate-tool', e.pointerId, point);
+      } else {
+        startDrag(obj, 'move', e.pointerId, point);
+      }
     } else {
       selectObject(null);
     }
-
-    setIsDragging(true);
-    setDragStart(coords);
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || !selectedObjectId || !objectDragStart) return;
-    const coords = getCanvasCoords(e.clientX, e.clientY);
-    const obj = canvasObjects.find((o) => o.id === selectedObjectId);
-    if (!obj) return;
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = getCanvasCoords(e.clientX, e.clientY);
 
-    if (activeTool === 'select' || activeTool === 'move') {
-      const deltaX = coords.x - objectDragStart.x;
-      const deltaY = coords.y - objectDragStart.y;
-
-      updateCanvasObject(selectedObjectId, {
-        x: obj.x + deltaX,
-        y: obj.y + deltaY,
-      });
-
-      setObjectDragStart(coords);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    setObjectDragStart(null);
-  };
-
-  // Touch handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      const touch = e.touches[0];
-      const coords = getCanvasCoords(touch.clientX, touch.clientY);
-      const obj = findObjectAtPosition(coords.x, coords.y);
-      if (obj) {
-        selectObject(obj.id);
-        setObjectDragStart(coords);
-      } else {
-        selectObject(null);
+    // Hover cursor feedback
+    if (!dragRef.current) {
+      let cursor: string | null = null;
+      if (selectedObject) {
+        const hit = hitTestHandles(selectedObject, point.x, point.y);
+        if (hit) cursor = getCursorForHandle(typeof hit === 'string' ? hit : hit.id);
       }
+      const canvas = canvasRef.current;
+      if (canvas) canvas.style.cursor = cursor || getCursorForHandle(null);
+      return;
+    }
 
-      setIsDragging(true);
-      setDragStart(coords);
+    const drag = dragRef.current;
+    if (e.pointerId !== drag.pointerId || !selectedObject) return;
+
+    const objStart = drag.objStart;
+    const cx = objStart.x + (objStart.width * objStart.scaleX) / 2;
+    const cy = objStart.y + (objStart.height * objStart.scaleY) / 2;
+
+    switch (drag.mode) {
+      case 'move': {
+        const dx = point.x - drag.start.x;
+        const dy = point.y - drag.start.y;
+        updateCanvasObject(selectedObject.id, {
+          x: objStart.x + dx,
+          y: objStart.y + dy,
+        });
+        break;
+      }
+      case 'scale-tool': {
+        const startDist = Math.max(1, Math.hypot(drag.start.x - cx, drag.start.y - cy));
+        const curDist = Math.hypot(point.x - cx, point.y - cy);
+        const s = clamp(curDist / startDist, 0.02, 40);
+        updateCanvasObject(selectedObject.id, {
+          scaleX: objStart.scaleX * s,
+          scaleY: objStart.scaleY * s,
+        });
+        break;
+      }
+      case 'rotate-tool':
+      case 'rotate-handle': {
+        const angle = Math.atan2(point.y - cy, point.x - cx);
+        const delta = angle - (drag.startAngle || 0);
+        const rot = normalizeDeg(objStart.rotation + (delta * 180) / Math.PI);
+        updateCanvasObject(selectedObject.id, { rotation: rot });
+        break;
+      }
+      case 'resize': {
+        const handle = drag.handle?.id;
+        if (!handle) break;
+        const baseW = objStart.width;
+        const baseH = objStart.height;
+
+        if (handle === 'tl' || handle === 'tr' || handle === 'bl' || handle === 'br') {
+          // Uniform scale from the opposite (anchor) corner — aspect locked
+          const anchor = drag.anchor || {
+            x: objStart.x + (handle === 'tl' || handle === 'bl' ? baseW * objStart.scaleX : 0),
+            y: objStart.y + (handle === 'tl' || handle === 'tr' ? baseH * objStart.scaleY : 0),
+          };
+          const w0 = baseW * objStart.scaleX;
+          const h0 = baseH * objStart.scaleY;
+          const diag = Math.hypot(w0, h0);
+          const dir = { x: (cx - anchor.x) / diag, y: (cy - anchor.y) / diag };
+          const proj = (point.x - anchor.x) * dir.x + (point.y - anchor.y) * dir.y;
+          const s = clamp(proj / diag, 0.02, 40);
+
+          let nx = objStart.x;
+          let ny = objStart.y;
+          const nw = baseW * s;
+          const nh = baseH * s;
+          if (handle === 'tl') {
+            nx = anchor.x - nw;
+            ny = anchor.y - nh;
+          } else if (handle === 'tr') {
+            nx = anchor.x;
+            ny = anchor.y - nh;
+          } else if (handle === 'bl') {
+            nx = anchor.x - nw;
+            ny = anchor.y;
+          } else {
+            nx = anchor.x;
+            ny = anchor.y;
+          }
+
+          updateCanvasObject(selectedObject.id, {
+            scaleX: s,
+            scaleY: s,
+            x: nx,
+            y: ny,
+          });
+        } else {
+          // Edge handles — single axis scaling
+          if (handle === 'e' || handle === 'w') {
+            const w0 = baseW * objStart.scaleX;
+            const factor =
+              handle === 'e'
+                ? (point.x - objStart.x) / w0
+                : (objStart.x + w0 - point.x) / w0;
+            const s = clamp(factor, 0.02, 40);
+            updateCanvasObject(selectedObject.id, {
+              scaleX: s,
+              x: handle === 'w' ? objStart.x + w0 - baseW * s : objStart.x,
+            });
+          } else {
+            const h0 = baseH * objStart.scaleY;
+            const factor =
+              handle === 's'
+                ? (point.y - objStart.y) / h0
+                : (objStart.y + h0 - point.y) / h0;
+            const s = clamp(factor, 0.02, 40);
+            updateCanvasObject(selectedObject.id, {
+              scaleY: s,
+              y: handle === 'n' ? objStart.y + h0 - baseH * s : objStart.y,
+            });
+          }
+        }
+        break;
+      }
+      default:
+        break;
     }
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 1 && isDragging && selectedObjectId && objectDragStart) {
-      e.preventDefault();
-      const touch = e.touches[0];
-      const coords = getCanvasCoords(touch.clientX, touch.clientY);
-      const obj = canvasObjects.find((o) => o.id === selectedObjectId);
-      if (!obj) return;
-
-      const deltaX = coords.x - objectDragStart.x;
-      const deltaY = coords.y - objectDragStart.y;
-
-      updateCanvasObject(selectedObjectId, {
-        x: obj.x + deltaX,
-        y: obj.y + deltaY,
-      });
-
-      setObjectDragStart(coords);
+  const endDrag = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (dragRef.current && dragRef.current.pointerId === e.pointerId) {
+      dragRef.current = null;
+      commitTransform(); // snapshot for undo
     }
   };
 
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-    setObjectDragStart(null);
+  const cancelDrag = () => {
+    if (dragRef.current) {
+      dragRef.current = null;
+      commitTransform();
+    }
   };
 
   return (
     <div
       ref={containerRef}
-      className="flex-1 bg-gray-900 flex items-center justify-center overflow-hidden"
+      className="flex-1 bg-slate-900 flex items-center justify-center overflow-hidden"
+      style={{ touchAction: 'none' }}
     >
       <canvas
         ref={canvasRef}
-        className="bg-white shadow-2xl cursor-crosshair"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        className="bg-white shadow-2xl cursor-move select-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={cancelDrag}
+        onPointerLeave={() => {
+          if (!dragRef.current) {
+            const canvas = canvasRef.current;
+            if (canvas) canvas.style.cursor = getCursorForHandle(null);
+          }
+        }}
       />
     </div>
   );
+}
+
+function clamp(v: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, v));
+}
+
+function normalizeDeg(deg: number) {
+  return ((deg % 360) + 360) % 360;
 }

@@ -109,6 +109,7 @@ function StudioContent() {
               )}
               <div className="flex items-center gap-2">
                 {user.photoURL ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
                 ) : (
                   <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
