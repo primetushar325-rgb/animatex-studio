@@ -1,0 +1,98 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+    
+    // File size limits
+    function isValidFileSize(maxMB) {
+      return request.resource.size < maxMB * 1024 * 1024;
+    }
+    
+    // Content type validation
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    function isAudio() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+    
+    function isVideo() {
+      return request.resource.contentType.matches('video/.*');
+    }
+    
+    // User files - each user can ONLY access their own files
+    // Structure: users/{userId}/{type}/{projectId}/{filename}
+    match /users/{userId}/{allPaths=**} {
+      // Read: owner only (admins use Admin SDK server-side)
+      allow read: if isOwner(userId);
+      // Write: owner only with size limit (50MB)
+      allow write: if isOwner(userId) && isValidFileSize(50);
+    }
+    
+    // Audio files with type validation
+    match /users/{userId}/audio/{projectId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isAudio() && isValidFileSize(50);
+    }
+    
+    // Character images
+    match /users/{userId}/characters/{projectId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isImage() && isValidFileSize(10);
+    }
+    
+    // Background images
+    match /users/{userId}/backgrounds/{projectId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isImage() && isValidFileSize(20);
+    }
+    
+    // Props
+    match /users/{userId}/props/{projectId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isImage() && isValidFileSize(10);
+    }
+    
+    // Project thumbnails (smaller limit)
+    match /users/{userId}/thumbnails/{projectId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isImage() && isValidFileSize(5);
+    }
+    
+    // Exported videos (larger limit)
+    match /users/{userId}/exports/{projectId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isVideo() && isValidFileSize(500);
+    }
+    
+    // Public templates - read by all authenticated, write by admin only
+    match /templates/{templateId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Public assets - read by all authenticated, write by admin only
+    match /public/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

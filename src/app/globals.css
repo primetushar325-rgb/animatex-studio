@@ -1,0 +1,228 @@
+@import "tailwindcss";
+
+/* Mobile-first base styles */
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent pull-to-refresh on mobile */
+body.prevent-pull-refresh {
+  overscroll-behavior-y: contain;
+}
+
+/* Safe area insets for notched devices */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Touch-friendly inputs */
+input, button, select, textarea {
+  font-size: 16px; /* Prevents zoom on iOS */
+}
+
+/* Animation utilities */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Touch area expansion */
+.touch-target {
+  position: relative;
+}
+
+.touch-target::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  bottom: -8px;
+  left: -8px;
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+}
+
+/* Selection color */
+::selection {
+  background: #BFDBFE;
+  color: #1E3A8A;
+}
+
+/* Bangla font support */
+@font-face {
+  font-family: 'Noto Sans Bengali';
+  src: local('Noto Sans Bengali');
+  unicode-range: U+0980-09FF;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Noto Sans Bengali', sans-serif;
+}
+
+/* Performance mode styles */
+.performance-mode .animate-fade-in,
+.performance-mode .animate-slide-up,
+.performance-mode .animate-slide-down,
+.performance-mode .animate-scale-in {
+  animation: none;
+}
+
+.performance-mode * {
+  transition-duration: 0.1s !important;
+}
+
+/* Timeline track colors */
+.track-character { background-color: #EC4899; }
+.track-background { background-color: #22C55E; }
+.track-prop { background-color: #3B82F6; }
+.track-text { background-color: #EAB308; }
+.track-voice { background-color: #A855F7; }
+.track-music { background-color: #F97316; }
+.track-sfx { background-color: #06B6D4; }
+
+/* Mobile bottom sheet */
+.bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  border-radius: 20px 20px 0 0;
+  padding: 20px;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.1);
+  transform: translateY(100%);
+  transition: transform 0.3s ease-out;
+}
+
+.bottom-sheet.open {
+  transform: translateY(0);
+}
+
+.bottom-sheet-handle {
+  width: 40px;
+  height: 4px;
+  background: #E5E7EB;
+  border-radius: 2px;
+  margin: 0 auto 16px;
+}
+
+/* Loading skeleton */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Canvas styles */
+.canvas-container {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Pinch zoom container */
+.pinch-zoom-container {
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+/* Long press indicator */
+.long-press-indicator {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border: 3px solid #3B82F6;
+  border-radius: 50%;
+  animation: longPressRing 0.5s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes longPressRing {
+  0% { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
