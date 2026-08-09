@@ -90,14 +90,12 @@ export function applyKeyframes(
   const merged: Partial<CanvasObject> = {};
 
   for (const prop of NUMERIC_PROPS) {
-    if (p0[prop] !== undefined && p1[prop] !== undefined) {
-      (merged as Record<string, number>)[prop] = lerp(
-        p0[prop] as number,
-        p1[prop] as number,
-        u
-      );
-    } else if (p0[prop] !== undefined) {
-      (merged as Record<string, number>)[prop] = p0[prop] as number;
+    const a = p0[prop];
+    const b = p1[prop];
+    if (a !== undefined && b !== undefined) {
+      (merged as Record<string, number>)[prop] = lerp(a as number, b as number, u);
+    } else if (a !== undefined) {
+      (merged as Record<string, number>)[prop] = a as number;
     }
   }
 
@@ -108,6 +106,7 @@ export function applyKeyframes(
     }
   }
 
+  // keep motion preset from the object (motion isn't keyframed — yet)
   return { ...obj, ...merged };
 }
 

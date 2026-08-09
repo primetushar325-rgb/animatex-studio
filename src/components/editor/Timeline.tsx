@@ -109,14 +109,24 @@ export function Timeline() {
     : undefined;
 
   // ---------------------------------------------------------------------------
-  // Playback across ALL scenes — wall-clock driven, rate-aware, never restarts
+  // Playback across ALL scenes — wall-clock driven, rate-aware, never restarts.
+  // FIX (Part 4): playback starts from the playhead's GLOBAL position
+  // (sum of previous scene durations + current scene time), so pressing play
+  // never jumps back to 00:00 or to the wrong scene.
   // ---------------------------------------------------------------------------
   const totalDuration = scenes.reduce((t, s) => t + s.duration, 0);
 
   useEffect(() => {
     if (!isPlaying || scenes.length === 0) return;
 
-    const playStart = Date.now() - useEditorStore.getState().currentTime;
+    const st0 = useEditorStore.getState();
+    // global position = acc(scenes before current) + currentTime
+    let globalPos = st0.currentTime;
+    for (let i = 0; i < scenes.length; i++) {
+      if (scenes[i].id === st0.currentSceneId) break;
+      globalPos += scenes[i].duration;
+    }
+    const playStart = Date.now() - globalPos;
     let animationId: number;
     let lastTick = 0;
 
@@ -412,8 +422,17 @@ export function Timeline() {
                 {i}s
               </div>
             ))}
-            <div className="absolute top-0 h-full w-0.5 bg-red-400 z-10" style={{ left: `${(currentTime / sceneDuration) * 100}%` }}>
-              <div className="absolute -top-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-red-400 transform rotate-45"></div>
+            {/* Playhead — clean crisp red line + small top flag, pixel-synced */}
+            <div
+              className="absolute top-0 h-full z-10"
+              style={{
+                left: `${(currentTime / sceneDuration) * 100}%`,
+                width: 0,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              <div className="absolute top-0 left-0 w-[2px] -translate-x-1/2 h-full bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.9)]" />
+              <div className="absolute top-0 left-0 -translate-x-1/2 w-[3px] h-[10px] bg-red-500 rounded-b-[1px]" />
             </div>
           </div>
 

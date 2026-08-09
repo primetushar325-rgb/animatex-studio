@@ -26,6 +26,7 @@ import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
   Diamond,
+  Sparkles,
 } from 'lucide-react';
 import { useEditorStore } from '@/store/editor-store';
 import { useProjectStore } from '@/store/project-store';
@@ -41,10 +42,11 @@ interface ToolbarProps {
   onEditText?: () => void;
   onExport?: () => void;
   onSearch?: () => void;
+  onAnimate?: () => void;
   lang?: Lang;
 }
 
-export function Toolbar({ onBack, onAddText, onSave, onEditText, onExport, onSearch, lang = 'en' }: ToolbarProps) {
+export function Toolbar({ onBack, onAddText, onSave, onEditText, onExport, onSearch, onAnimate, lang = 'en' }: ToolbarProps) {
   const [openMenu, setOpenMenu] = useState<'settings' | 'notifications' | 'history' | null>(null);
   const projectFileRef = useRef<HTMLInputElement>(null);
 
@@ -232,6 +234,15 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText, onExport, onSea
                 title="Flip horizontal"
               >
                 <FlipHorizontal2 size={18} />
+              </button>
+            )}
+            {selectedObject?.type === 'character' && (
+              <button
+                onClick={onAnimate}
+                className="flex items-center gap-1 px-3 py-1.5 editor-gradient text-white rounded-lg text-xs font-semibold transition-all active:scale-95 whitespace-nowrap shadow-lg shadow-black/30"
+                title="Open Action Picker"
+              >
+                <Sparkles size={12} /> Animate
               </button>
             )}
             {selectedObject?.assetId && (

@@ -528,6 +528,160 @@ export function getActionPose(action: CharacterAction, t: number): CharacterPose
       p.bodyY = 0.05;
       return p;
     }
+    // ------------------------------------------------------------------
+    // Extended pose set (Action Picker)
+    // ------------------------------------------------------------------
+    case 'sit-kneel': {
+      // kneeling — legs folded back, hands on thighs
+      const w = cycle(t, 2200);
+      p.legL = 1.9;
+      p.legR = 1.9;
+      p.kneeL = -0.9;
+      p.kneeR = -0.9;
+      p.armL = 0.25 + Math.sin(w) * 0.08;
+      p.armR = 0.25 - Math.sin(w) * 0.08;
+      p.elbowL = 0.7;
+      p.elbowR = 0.7;
+      p.bodyY = 0.05;
+      return p;
+    }
+    case 'namaskar': {
+      // folded hands (prayer), sitting cross-legged
+      const w = cycle(t, 2600);
+      p.legL = 1.0;
+      p.legR = 1.0;
+      p.kneeL = 1.5;
+      p.kneeR = 1.5;
+      p.armL = 1.35;
+      p.armR = 1.35;
+      p.elbowL = 0.9 - Math.abs(Math.sin(w)) * 0.12;
+      p.elbowR = 0.9 - Math.abs(Math.sin(w)) * 0.12;
+      p.headTilt = Math.sin(w) * 0.04;
+      p.bodyY = 0.03;
+      return p;
+    }
+    case 'give': {
+      // handing something forward
+      const w = cycle(t, 1600);
+      p.armR = 1.1;
+      p.elbowR = -0.2 + Math.sin(w) * 0.06;
+      p.armL = 0.4;
+      p.elbowL = 0.5;
+      p.legL = 0.25;
+      p.legR = 0.1;
+      p.lean = 0.12;
+      return p;
+    }
+    case 'sweep': {
+      // sweeping motion (Dust Collect Karna)
+      const w = cycle(t, 900);
+      const s = Math.sin(w);
+      p.armL = 1.15 - s * 0.55;
+      p.armR = 1.15 + s * 0.55;
+      p.elbowL = 0.15;
+      p.elbowR = 0.15;
+      p.legL = 0.5 - s * 0.2;
+      p.legR = 0.5 + s * 0.2;
+      p.lean = 0.55;
+      p.bodyY = Math.abs(s) * 0.02;
+      return p;
+    }
+    case 'wash': {
+      // scrubbing dishes loop (Bartan Dhona Loop)
+      const w = cycle(t, 700);
+      const s = Math.sin(w);
+      p.armL = 0.7 - s * 0.45;
+      p.armR = 0.7 + s * 0.45;
+      p.elbowL = 0.85;
+      p.elbowR = 0.85;
+      p.lean = 0.35;
+      p.bodyY = Math.abs(s) * 0.015;
+      return p;
+    }
+    case 'jog': {
+      // gentle jog
+      const w = cycle(t, 460);
+      const s = Math.sin(w);
+      p.legL = s * 0.24;
+      p.legR = -s * 0.24;
+      p.kneeL = Math.max(0, s) * 1.15;
+      p.kneeR = Math.max(0, -s) * 1.15;
+      p.armL = -s * 0.65;
+      p.armR = s * 0.65;
+      p.elbowL = 0.42;
+      p.elbowR = 0.42;
+      p.bodyY = Math.abs(s) * 0.045;
+      p.lean = 0.22;
+      return p;
+    }
+    case 'sit-crossed': {
+      // crossed-leg sitting
+      const w = cycle(t, 2400);
+      p.legL = 0.95;
+      p.legR = 0.95;
+      p.kneeL = 1.45;
+      p.kneeR = 1.45;
+      p.armL = 0.2;
+      p.armR = 0.2;
+      p.elbowL = 0.6;
+      p.elbowR = 0.6;
+      p.bodyY = Math.sin(w) * 0.008;
+      return p;
+    }
+    case 'sleep-stomach': {
+      // lying on stomach — low + slight rock
+      const w = cycle(t, 3200);
+      p.lean = 0.28;
+      p.bodyY = 0.1 + Math.sin(w) * 0.006;
+      p.armL = 0.45;
+      p.armR = 0.45;
+      p.elbowL = 0.9;
+      p.elbowR = 0.9;
+      p.legL = 0.55;
+      p.legR = 0.55;
+      p.headTilt = -0.2;
+      p.blink = true;
+      return p;
+    }
+    case 'cook': {
+      // stirring a pot
+      const w = cycle(t, 850);
+      const s = Math.sin(w);
+      p.armR = 0.95 - s * 0.3;
+      p.elbowR = 0.7;
+      p.armL = 0.5;
+      p.elbowL = 0.9;
+      p.lean = 0.18;
+      p.bodyY = Math.abs(s) * 0.012;
+      return p;
+    }
+    case 'fly': {
+      // flying — arms out like superman
+      const w = cycle(t, 1500);
+      p.lean = 1.25;
+      p.armL = 0.95 - Math.sin(w) * 0.15;
+      p.armR = 0.95 + Math.sin(w) * 0.15;
+      p.elbowL = 0.08;
+      p.elbowR = 0.08;
+      p.legL = 0.55;
+      p.legR = 0.55;
+      p.bodyY = Math.sin(w) * 0.02;
+      return p;
+    }
+    case 'sleep-back': {
+      // lying on back
+      const w = cycle(t, 3400);
+      p.lean = -0.1;
+      p.bodyY = 0.08 + Math.sin(w) * 0.005;
+      p.armL = 0.7;
+      p.armR = 0.7;
+      p.elbowL = 0.6;
+      p.elbowR = 0.6;
+      p.legL = 0.35;
+      p.legR = 0.35;
+      p.blink = true;
+      return p;
+    }
     default:
       return p;
   }
@@ -547,7 +701,7 @@ interface HumanCfg {
   hairStyle?: 'short' | 'long' | 'bald' | 'bun' | 'spiky';
   build?: 'slim' | 'wide';
   glasses?: boolean;
-  hat?: 'cap' | 'none';
+  hat?: 'cap' | 'none' | 'chef' | 'soldier' | 'crown' | 'helmet';
 }
 
 const HUMAN_PALETTES: Record<string, HumanCfg> = {
@@ -615,6 +769,95 @@ const HUMAN_PALETTES: Record<string, HumanCfg> = {
     hairStyle: 'bun',
     glasses: true,
   },
+  baby: {
+    skin: '#F8D3AC',
+    hair: '#3B2A1A',
+    shirt: '#FBBF24',
+    pants: '#F97316',
+    shoes: '#FFFFFF',
+    hairStyle: 'bald',
+  },
+  doctor: {
+    skin: '#E8B78D',
+    hair: '#1F2937',
+    shirt: '#E5E7EB',
+    pants: '#2563EB',
+    shoes: '#FFFFFF',
+    hairStyle: 'short',
+  },
+  teacher: {
+    skin: '#D9A066',
+    hair: '#4E342E',
+    shirt: '#16A34A',
+    pants: '#374151',
+    shoes: '#1F2937',
+    hairStyle: 'short',
+    glasses: true,
+  },
+  farmer: {
+    skin: '#C68E62',
+    hair: '#3F2D20',
+    shirt: '#B45309',
+    pants: '#7C4A2A',
+    shoes: '#5D4037',
+    hairStyle: 'short',
+    hat: 'cap',
+  },
+  chef: {
+    skin: '#F0C49A',
+    hair: '#4E342E',
+    shirt: '#F8FAFC',
+    pants: '#334155',
+    shoes: '#111827',
+    hairStyle: 'short',
+    hat: 'chef',
+  },
+  soldier: {
+    skin: '#D9A066',
+    hair: '#111827',
+    shirt: '#4B5563',
+    pants: '#374151',
+    shoes: '#111827',
+    hairStyle: 'spiky',
+    hat: 'soldier',
+  },
+  princess: {
+    skin: '#F6C39A',
+    hair: '#E7B34C',
+    shirt: '#EC4899',
+    pants: '#8B5CF6',
+    shoes: '#F9A8D4',
+    hairStyle: 'long',
+    dress: true,
+  },
+  king: {
+    skin: '#D9A066',
+    hair: '#78350F',
+    shirt: '#7C3AED',
+    pants: '#3B0764',
+    shoes: '#1F2937',
+    hairStyle: 'short',
+    build: 'wide',
+    hat: 'crown',
+  },
+  astronaut: {
+    skin: '#F5F0E6',
+    hair: '#111827',
+    shirt: '#E5E7EB',
+    pants: '#9CA3AF',
+    shoes: '#FFFFFF',
+    hairStyle: 'short',
+    hat: 'helmet',
+  },
+  police: {
+    skin: '#D9A066',
+    hair: '#1F2937',
+    shirt: '#1D4ED8',
+    pants: '#111827',
+    shoes: '#111827',
+    hairStyle: 'short',
+    hat: 'cap',
+  },
 };
 
 interface AnimalCfg {
@@ -673,7 +916,91 @@ const ANIMAL_PALETTES: Record<string, AnimalCfg> = {
     tail: '#1D4ED8',
     legs: '#F59E0B',
   },
+  // ---- Part 4 expansion ----
+  fox: {
+    body: '#F97316',
+    belly: '#FFEDD5',
+    accent: '#C2410C',
+    ear: '#F97316',
+    nose: '#1F2937',
+    tail: '#F97316',
+    legs: '#C2410C',
+  },
+  rabbit: {
+    body: '#E5E7EB',
+    belly: '#FFFFFF',
+    accent: '#D1D5DB',
+    ear: '#E5E7EB',
+    nose: '#F9A8D4',
+    tail: '#FFFFFF',
+    legs: '#D1D5DB',
+  },
+  lion: {
+    body: '#F59E0B',
+    belly: '#FDE68A',
+    accent: '#B45309',
+    ear: '#F59E0B',
+    nose: '#78350F',
+    tail: '#B45309',
+    legs: '#D97706',
+  },
+  elephant: {
+    body: '#9CA3AF',
+    belly: '#D1D5DB',
+    accent: '#6B7280',
+    ear: '#9CA3AF',
+    nose: '#6B7280',
+    tail: '#6B7280',
+    legs: '#8B9096',
+  },
+  horse: {
+    body: '#8B5CF6',
+    belly: '#DDD6FE',
+    accent: '#6D28D9',
+    ear: '#8B5CF6',
+    nose: '#5B21B6',
+    tail: '#6D28D9',
+    legs: '#7C3AED',
+  },
+  sheep: {
+    body: '#F5F5F4',
+    belly: '#FFFFFF',
+    accent: '#D6D3D1',
+    ear: '#E7E5E4',
+    nose: '#A8A29E',
+    tail: '#F5F5F4',
+    legs: '#D6D3D1',
+  },
+  tiger: {
+    body: '#F97316',
+    belly: '#FFF7ED',
+    accent: '#1F2937',
+    ear: '#F97316',
+    nose: '#1F2937',
+    tail: '#F97316',
+    legs: '#C2410C',
+  },
+  monkey: {
+    body: '#92400E',
+    belly: '#FDE68A',
+    accent: '#78350F',
+    ear: '#92400E',
+    nose: '#451A03',
+    tail: '#92400E',
+    legs: '#7C3A0B',
+  },
+  duck: {
+    body: '#FACC15',
+    belly: '#FEF9C3',
+    accent: '#CA8A04',
+    ear: '#FACC15',
+    nose: '#F97316',
+    tail: '#CA8A04',
+    legs: '#F97316',
+  },
 };
+
+
 
 // ---------------------------------------------------------------------------
 // Face (expressions + mouth shapes)
@@ -1075,6 +1402,61 @@ function drawHumanoid(
     ctx.fill();
     rr(ctx, headCX - headR * 0.15, headCY - headR * 1.05, headR * 0.9, headR * 0.18, headR * 0.08);
     ctx.fill();
+  } else if (cfg.hat === 'chef') {
+    // chef toque
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(headCX, headCY - headR * 0.55, headR * 0.72, Math.PI, 0);
+    ctx.fill();
+    rr(ctx, headCX - headR * 0.75, headCY - headR * 0.95, headR * 1.5, headR * 0.4, headR * 0.12);
+    ctx.fill();
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(headCX - headR * 0.75, headCY - headR * 0.75);
+    ctx.lineTo(headCX + headR * 0.75, headCY - headR * 0.75);
+    ctx.stroke();
+  } else if (cfg.hat === 'crown') {
+    ctx.fillStyle = '#F59E0B';
+    ctx.beginPath();
+    ctx.moveTo(headCX - headR * 0.8, headCY - headR * 0.9);
+    ctx.lineTo(headCX - headR * 0.8, headCY - headR * 1.55);
+    ctx.lineTo(headCX - headR * 0.35, headCY - headR * 1.15);
+    ctx.lineTo(headCX, headCY - headR * 1.7);
+    ctx.lineTo(headCX + headR * 0.35, headCY - headR * 1.15);
+    ctx.lineTo(headCX + headR * 0.8, headCY - headR * 1.55);
+    ctx.lineTo(headCX + headR * 0.8, headCY - headR * 0.9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#EF4444';
+    ctx.beginPath();
+    ctx.arc(headCX, headCY - headR * 1.32, headR * 0.1, 0, TAU);
+    ctx.fill();
+  } else if (cfg.hat === 'helmet') {
+    // astronaut visor + helmet
+    ctx.fillStyle = '#F8FAFC';
+    ctx.beginPath();
+    ctx.arc(headCX, headCY, headR * 1.12, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = '#CBD5E1';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(headCX, headCY, headR * 1.12, 0, TAU);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(59,130,246,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(headCX, headCY + headR * 0.1, headR * 0.85, headR * 0.6, 0, 0, TAU);
+    ctx.fill();
+    // redraw face on top for visibility inside visor
+    drawFace(ctx, headCX, headCY + headR * 0.05, headR * 0.8, expression, pose.mouthOpen, pose.blink, cfg);
+  } else if (cfg.hat === 'soldier') {
+    ctx.fillStyle = '#374151';
+    rr(ctx, headCX - headR * 0.95, headCY - headR * 0.9, headR * 1.9, headR * 0.5, headR * 0.15);
+    ctx.fill();
+    ctx.fillStyle = '#1F2937';
+    ctx.beginPath();
+    ctx.arc(headCX, headCY - headR * 0.8, headR * 0.35, Math.PI, 0);
+    ctx.fill();
   }
 
   // face
@@ -1164,21 +1546,40 @@ function drawQuadruped(
   const headCY = bodyY - bodyH * 0.3;
   const headR = h * 0.19;
 
-  // ears
-  if (kind === 'cat') {
+  // ears (species-specific)
+  const pointy = kind === 'cat' || kind === 'fox' || kind === 'tiger' || kind === 'monkey';
+  const longEars = kind === 'rabbit' || kind === 'horse';
+  const floppy = kind === 'dog' || kind === 'sheep';
+  const bigEars = kind === 'elephant';
+  if (pointy) {
+    const hgt = kind === 'monkey' ? 0.45 : 1.0;
     ctx.fillStyle = cfg.ear;
     ctx.beginPath();
     ctx.moveTo(headCX - headR * 0.9, headCY - headR * 0.1);
-    ctx.lineTo(headCX - headR * 0.55, headCY - headR * 1.05);
+    ctx.lineTo(headCX - headR * 0.55, headCY - headR * (0.15 + hgt));
     ctx.lineTo(headCX - headR * 0.05, headCY - headR * 0.15);
     ctx.closePath();
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(headCX + headR * 0.05, headCY - headR * 0.15);
-    ctx.lineTo(headCX + headR * 0.55, headCY - headR * 1.05);
+    ctx.lineTo(headCX + headR * 0.55, headCY - headR * (0.15 + hgt));
     ctx.lineTo(headCX + headR * 0.9, headCY - headR * 0.1);
     ctx.closePath();
     ctx.fill();
+  } else if (longEars) {
+    ctx.fillStyle = cfg.ear;
+    rr(ctx, headCX - headR * 0.85, headCY - headR * 1.45, headR * 0.3, headR * 1.1, headR * 0.15);
+    ctx.fill();
+    rr(ctx, headCX + headR * 0.55, headCY - headR * 1.45, headR * 0.3, headR * 1.1, headR * 0.15);
+    ctx.fill();
+  } else if (floppy) {
+    ctx.fillStyle = cfg.ear;
+    ellipse(ctx, headCX - headR * 0.8, headCY - headR * 0.05, headR * 0.3, headR * 0.75, cfg.ear);
+    ellipse(ctx, headCX + headR * 0.8, headCY - headR * 0.05, headR * 0.3, headR * 0.75, cfg.ear);
+  } else if (bigEars) {
+    ctx.fillStyle = cfg.ear;
+    ellipse(ctx, headCX - headR * 0.95, headCY - headR * 0.05, headR * 0.42, headR * 0.5, cfg.ear);
+    ellipse(ctx, headCX + headR * 0.95, headCY - headR * 0.05, headR * 0.42, headR * 0.5, cfg.ear);
   } else if (kind === 'cow' || kind === 'goat') {
     // horns
     ctx.strokeStyle = kind === 'cow' ? '#D7C9A3' : '#9E9E9E';
@@ -1226,6 +1627,66 @@ function drawQuadruped(
     ctx.arc(headCX + headR * 0.55, headCY + headR * 0.3, headR * 0.18, 0.15 * Math.PI, 0.85 * Math.PI);
     ctx.stroke();
   }
+  // ---- species-specific features (Part 4) ----
+  if (kind === 'lion') {
+    // mane
+    ctx.fillStyle = '#B45309';
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU;
+      ctx.beginPath();
+      ctx.arc(headCX + Math.cos(a) * headR * 1.35, headCY + Math.sin(a) * headR * 1.15, headR * 0.3, 0, TAU);
+      ctx.fill();
+    }
+  } else if (kind === 'elephant') {
+    // trunk
+    ctx.strokeStyle = cfg.nose;
+    ctx.lineWidth = headR * 0.4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(headCX + headR * 0.75, headCY + headR * 0.3);
+    ctx.quadraticCurveTo(headCX + headR * 1.25, headCY + headR * 0.6, headCX + headR * 0.85, headCY + headR * 1.25);
+    ctx.stroke();
+    // tusks
+    ctx.strokeStyle = '#F5F5F4';
+    ctx.lineWidth = headR * 0.16;
+    ctx.beginPath();
+    ctx.moveTo(headCX + headR * 0.62, headCY + headR * 0.42);
+    ctx.lineTo(headCX + headR * 0.95, headCY + headR * 0.9);
+    ctx.stroke();
+  } else if (kind === 'tiger') {
+    // stripes on head
+    ctx.strokeStyle = '#1F2937';
+    ctx.lineWidth = headR * 0.09;
+    ctx.beginPath();
+    ctx.moveTo(headCX - headR * 0.6, headCY - headR * 0.75);
+    ctx.lineTo(headCX - headR * 0.1, headCY - headR * 0.6);
+    ctx.moveTo(headCX + headR * 0.6, headCY - headR * 0.75);
+    ctx.lineTo(headCX + headR * 0.1, headCY - headR * 0.6);
+    ctx.stroke();
+  } else if (kind === 'sheep') {
+    // woolly cap
+    ctx.fillStyle = '#FFFFFF';
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      ctx.beginPath();
+      ctx.arc(headCX + Math.cos(a) * headR * 0.85, headCY + Math.sin(a) * headR * 0.75 - headR * 0.3, headR * 0.35, 0, TAU);
+      ctx.fill();
+    }
+  } else if (kind === 'horse') {
+    // mane
+    ctx.strokeStyle = cfg.accent;
+    ctx.lineWidth = headR * 0.12;
+    ctx.beginPath();
+    ctx.moveTo(headCX - headR * 0.4, headCY - headR * 0.75);
+    ctx.lineTo(headCX - headR * 0.95, headCY + headR * 0.1);
+    ctx.stroke();
+  } else if (kind === 'monkey') {
+    // lighter face patch
+    ellipse(ctx, headCX + headR * 0.3, headCY + headR * 0.15, headR * 0.5, headR * 0.42, '#FDE68A');
+  } else if (kind === 'duck' || kind === 'bird') {
+    // nothing extra — beak already drawn
+  }
+
   // whiskers (cat)
   if (kind === 'cat') {
     ctx.strokeStyle = '#B45309';
@@ -1417,9 +1878,13 @@ function drawObject(
     }
   } else if (obj.type === 'character') {
     const kind = (obj.characterType || 'boy') as CharacterType;
-    if (kind === 'bird') {
+    if (kind === 'bird' || kind === 'duck') {
       drawBird(ctx, obj, pose, lifeT);
-    } else if (kind === 'dog' || kind === 'cat' || kind === 'cow' || kind === 'goat') {
+    } else if (
+      kind === 'dog' || kind === 'cat' || kind === 'cow' || kind === 'goat' ||
+      kind === 'fox' || kind === 'rabbit' || kind === 'lion' || kind === 'elephant' ||
+      kind === 'horse' || kind === 'sheep' || kind === 'tiger' || kind === 'monkey'
+    ) {
       drawQuadruped(ctx, obj, pose, lifeT, obj.expression || 'neutral', kind);
     } else {
       drawHumanoid(ctx, obj, pose, lifeT, obj.expression || 'neutral');
@@ -1449,36 +1914,117 @@ const PROP_ICONS: Record<string, string> = {
   Car: '🚗', Tree: '🌳', Food: '🍔', Gift: '🎁', Ball: '⚽',
 };
 
+const BG_THEMES: Record<string, { sky: string; sky2: string; ground: string; sun?: string }> = {
+  Village: { sky: '#A7E0FF', sky2: '#6FB7E8', ground: 'rgba(74,182,110,0.8)' },
+  City: { sky: '#C7D5E0', sky2: '#8FA6B5', ground: 'rgba(120,130,145,0.85)', sun: 'rgba(255,255,255,0.35)' },
+  School: { sky: '#BFE3F5', sky2: '#7FB8D8', ground: 'rgba(140,190,120,0.8)' },
+  Market: { sky: '#F7DFAE', sky2: '#E0B97F', ground: 'rgba(180,140,90,0.8)' },
+  House: { sky: '#CDE8F5', sky2: '#8FC3DE', ground: 'rgba(120,190,120,0.8)' },
+  Bedroom: { sky: '#F3E0F5', sky2: '#D2A6DD', ground: 'rgba(200,160,200,0.7)' },
+  Park: { sky: '#BDE8C9', sky2: '#86C9A0', ground: 'rgba(90,180,110,0.85)' },
+  River: { sky: '#B3DEF5', sky2: '#6FAFD8', ground: 'rgba(90,160,200,0.8)' },
+  Farm: { sky: '#F2E3B8', sky2: '#D8C07A', ground: 'rgba(170,150,60,0.8)' },
+  Road: { sky: '#CBD5E1', sky2: '#94A3B8', ground: 'rgba(80,90,105,0.85)' },
+  Office: { sky: '#D6DCE4', sky2: '#9AA8B8', ground: 'rgba(100,112,128,0.85)' },
+  Forest: { sky: '#BCE3C0', sky2: '#7FBF8C', ground: 'rgba(50,140,70,0.9)' },
+  Beach: { sky: '#FFE9C2', sky2: '#FFD08A', ground: 'rgba(240,210,150,0.9)' },
+  Mountain: { sky: '#DCE6F2', sky2: '#A8BEDD', ground: 'rgba(140,160,190,0.9)' },
+};
+
 function drawBackgroundShape(ctx: CanvasRenderingContext2D, obj: CanvasObject) {
   const w = obj.width * obj.scaleX;
   const h = obj.height * obj.scaleY;
   const x = obj.x;
   const y = obj.y;
 
+  const theme = BG_THEMES[obj.name || ''] || BG_THEMES.Village;
   const grad = ctx.createLinearGradient(x, y, x + w, y + h);
-  grad.addColorStop(0, '#A7E0FF');
-  grad.addColorStop(1, '#6FB7E8');
+  grad.addColorStop(0, theme.sky);
+  grad.addColorStop(1, theme.sky2);
   ctx.fillStyle = grad;
   ctx.fillRect(x, y, w, h);
 
-  // soft sun
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  // sun / moon disc
+  ctx.fillStyle = theme.sun || 'rgba(255,255,255,0.55)';
   ctx.beginPath();
   ctx.arc(x + w * 0.8, y + h * 0.18, Math.min(w, h) * 0.12, 0, TAU);
   ctx.fill();
 
-  // ground hill
-  ctx.fillStyle = 'rgba(74,182,110,0.8)';
+  // ground shape
+  ctx.fillStyle = theme.ground;
   ctx.beginPath();
   ctx.ellipse(x + w * 0.5, y + h * 0.95, w * 0.7, h * 0.22, 0, 0, TAU);
   ctx.fill();
 
-  const icon = BG_ICONS[obj.name || ''] || '🏞️';
-  ctx.font = `${Math.min(w, h) * 0.28}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.fillText(icon, x + w / 2, y + h * 0.42);
+  // second hill for depth
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.22, y + h * 0.9, w * 0.4, h * 0.14, 0, 0, TAU);
+  ctx.fill();
+
+  // mountains for mountain theme
+  if (obj.name === 'Mountain') {
+    ctx.fillStyle = 'rgba(120,140,175,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.1, y + h * 0.55);
+    ctx.lineTo(x + w * 0.4, y + h * 0.15);
+    ctx.lineTo(x + w * 0.7, y + h * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(150,170,205,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.45, y + h * 0.6);
+    ctx.lineTo(x + w * 0.7, y + h * 0.25);
+    ctx.lineTo(x + w * 0.95, y + h * 0.6);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // city skyline
+  if (obj.name === 'City' || obj.name === 'Office') {
+    ctx.fillStyle = 'rgba(70,85,105,0.75)';
+    for (let i = 0; i < 6; i++) {
+      const bw = w * 0.12;
+      const bh = h * (0.12 + ((i * 37) % 5) * 0.03);
+      ctx.fillRect(x + i * bw * 1.25, y + h * 0.5 - bh, bw, bh + h * 0.5);
+    }
+  }
+
+  // trees for forest/park/village
+  if (obj.name === 'Forest' || obj.name === 'Park' || obj.name === 'Village') {
+    ctx.fillStyle = 'rgba(30,110,60,0.85)';
+    for (let i = 0; i < 4; i++) {
+      const tx = x + w * (0.15 + i * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(tx - w * 0.05, y + h * 0.62);
+      ctx.lineTo(tx, y + h * 0.4);
+      ctx.lineTo(tx + w * 0.05, y + h * 0.62);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // water for river/beach
+  if (obj.name === 'River' || obj.name === 'Beach') {
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.1, y + h * (0.68 + i * 0.05));
+      ctx.quadraticCurveTo(x + w * 0.3, y + h * (0.65 + i * 0.05), x + w * 0.5, y + h * (0.68 + i * 0.05));
+      ctx.quadraticCurveTo(x + w * 0.7, y + h * (0.71 + i * 0.05), x + w * 0.9, y + h * (0.68 + i * 0.05));
+      ctx.stroke();
+    }
+  }
+
+  const icon = BG_ICONS[obj.name || ''] || '';
+  if (icon) {
+    ctx.font = `${Math.min(w, h) * 0.22}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillText(icon, x + w / 2, y + h * 0.42);
+  }
 }
 
 function drawPropShape(ctx: CanvasRenderingContext2D, obj: CanvasObject) {
@@ -1715,7 +2261,7 @@ export function getSelectionHandles(obj: CanvasObject): SelectionHandles {
 export function drawSelectionOverlay(
   ctx: CanvasRenderingContext2D,
   obj: CanvasObject,
-  accent = '#3B82F6'
+  accent = '#5B8DEF'
 ) {
   const w = obj.width * obj.scaleX;
   const h = obj.height * obj.scaleY;
@@ -1724,63 +2270,94 @@ export function drawSelectionOverlay(
   const cx = x + w / 2;
   const cy = y + h / 2;
 
-  // dashed border
   ctx.save();
   ctx.globalAlpha = 1;
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 4]);
-  ctx.strokeRect(x, y, w, h);
-  ctx.setLineDash([]);
 
-  // rotate handle
-  const rotY = y - 28;
+  // ------------------------------------------------------------------
+  // Border: 2px SOLID accent + soft glow (visible on light & dark bg)
+  // ------------------------------------------------------------------
+  ctx.shadowColor = 'rgba(91,141,239,0.65)';
+  ctx.shadowBlur = 8;
   ctx.strokeStyle = accent;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+  ctx.shadowBlur = 0;
+
+  // corner accents (short diagonal ticks) for extra visibility
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 3;
+  const tick = 10;
+  const corners: [number, number, number, number][] = [
+    [x, y, x + tick, y],
+    [x, y, x, y + tick],
+    [x + w, y, x + w - tick, y],
+    [x + w, y, x + w, y + tick],
+    [x, y + h, x + tick, y + h],
+    [x, y + h, x, y + h - tick],
+    [x + w, y + h, x + w - tick, y + h],
+    [x + w, y + h, x + w, y + h - tick],
+  ];
+  for (const [x1, y1, x2, y2] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  // ------------------------------------------------------------------
+  // Rotation handle: circle above top-center, connected by thin line
+  // ------------------------------------------------------------------
+  const rotY = y - 30;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(cx, y);
   ctx.lineTo(cx, rotY);
   ctx.stroke();
   ctx.fillStyle = accent;
+  ctx.shadowColor = 'rgba(91,141,239,0.6)';
+  ctx.shadowBlur = 6;
   ctx.beginPath();
-  ctx.arc(cx, rotY, 7, 0, TAU);
+  ctx.arc(cx, rotY, 8, 0, TAU);
   ctx.fill();
+  ctx.shadowBlur = 0;
   ctx.fillStyle = '#fff';
   ctx.beginPath();
   ctx.arc(cx, rotY, 3, 0, TAU);
   ctx.fill();
 
-  // corner handles
-  for (const c of getSelectionHandles(obj).corners) {
+  // ------------------------------------------------------------------
+  // Resize handles: filled squares, corner 12px + white outline (touch friendly)
+  // ------------------------------------------------------------------
+  const drawHandle = (hx: number, hy: number, size: number) => {
     ctx.fillStyle = accent;
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.rect(hx - size / 2, hy - size / 2, size, size);
+    ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.rect(c.x - 5, c.y - 5, 10, 10);
-    ctx.fill();
-    ctx.stroke();
-  }
+    ctx.strokeRect(hx - size / 2, hy - size / 2, size, size);
+  };
 
-  // edge handles
+  for (const c of getSelectionHandles(obj).corners) {
+    drawHandle(c.x, c.y, 12);
+  }
   for (const e of getSelectionHandles(obj).edges) {
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.rect(e.x - 4, e.y - 4, 8, 8);
-    ctx.fill();
-    ctx.stroke();
+    drawHandle(e.x, e.y, 9);
   }
 
-  // size label
-  ctx.fillStyle = 'rgba(15,23,42,0.85)';
-  rr(ctx, cx - 40, y - 52, 80, 18, 6);
+  // size label pill
+  ctx.fillStyle = 'rgba(15,23,42,0.88)';
+  rr(ctx, cx - 42, y - 54, 84, 20, 7);
   ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.font = '11px ui-monospace, monospace';
+  ctx.font = '600 11px ui-monospace, monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${Math.round(w)}×${Math.round(h)}`, cx, y - 43);
+  ctx.fillText(`${Math.round(w)}×${Math.round(h)}`, cx, y - 44);
   ctx.restore();
 }
 

@@ -331,3 +331,13 @@ editor's character picker and get drawn on the canvas when clicked.
 - **Project file export (.animatex) + import**; **aspect presets 16:9 / 9:16 / 1:1** in export.
 - **Scene transition picker** (fade/crossfade/slide/zoom) in Scenes panel; **Duplicate Project** button.
 - Stubs with clear "Coming soon" state: Text→Image, Text→Video.
+
+---
+
+## 🆕 MASTER PROMPT PART 4 — CRITICAL FIXES (2026-08)
+
+- **Keyframe engine fixed**: playback now starts from the playhead's GLOBAL position (no more jumping to 00:00 / wrong scene), keyframe timestamps land exactly at the playhead, interpolation verified (small→large smooth growth test passes), playhead is a clean pixel-synced red line with a top flag.
+- **Action Picker (new)**: bottom sheet with selected-character header + "Selected" badge, "Search Animations", FRONT / 3/4 FRONT / 3/4 BACK tabs, 20 pose tiles each showing a LIVE looping preview of the actual motion (mini-canvas), tap applies to canvas + records a timeline keyframe, current action pre-highlighted. 11 new poses added to the renderer (sit-kneel, namaskar, give, sweep, wash, jog, sit-crossed, sleep-stomach, cook, fly, sleep-back).
+- **No emoji in asset panels**: Characters tiles now render real procedural 2D character art on mini canvases; Backgrounds/Props/Expressions/Actions use lucide icons; headers use lucide icons. Zero emoji in Characters/Backgrounds/Props panels.
+- **Selection handles**: 2px solid accent border + glow, 12px corner / 9px edge filled handles with white outline, 18px hit tolerance (≈24px touch target), rotation handle circle + connector.
+- **Asset expansion**: 31 characters (doctors, farmers, chefs, soldiers, astronauts, kings, princesses, + fox/rabbit/lion/tiger/elephant/horse/sheep/monkey/duck with species features) and 14 themed backgrounds (office, forest, beach, mountain + color/weather variety).

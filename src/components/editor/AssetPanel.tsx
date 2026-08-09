@@ -13,7 +13,15 @@ import {
   type LibraryCharacter,
 } from '@/lib/editor/characterLibrary';
 import { SOUND_LIBRARY, previewSound, renderSound } from '@/lib/editor/soundKit';
-import { Mic } from 'lucide-react';
+import {
+  Mic, Home, Building2, School, Store, BedDouble, TreePine, Waves, Tractor, Route,
+  Armchair, Table as TableIcon, Smartphone, BookOpen, ShoppingBag, Car, UtensilsCrossed,
+  Gift, Circle, Meh, Smile, Frown, Angry, AlertTriangle, AlertCircle, Laugh, Droplets,
+  Brain, Moon, PersonStanding, Footprints, Activity, MoveVertical, Hand, MessageSquare,
+  Pointer, HandMetal, Music, TrendingDown, Image as ImageIcon, Mountain, BookMarked,
+} from 'lucide-react';
+import { drawSceneContent } from '@/lib/editor/renderer';
+import type { CanvasObject } from '@/types/animation';
 import type {
   CharacterType,
   BackgroundCategory,
@@ -27,32 +35,55 @@ import type {
 
 export type AssetTab = 'characters' | 'backgrounds' | 'props' | 'text' | 'audio';
 
-const builtInCharacters: { type: CharacterType; name: string; icon: string }[] = [
-  { type: 'boy', name: 'Boy', icon: '👦' },
-  { type: 'girl', name: 'Girl', icon: '👧' },
-  { type: 'child', name: 'Child', icon: '🧒' },
-  { type: 'man', name: 'Man', icon: '👨' },
-  { type: 'woman', name: 'Woman', icon: '👩' },
-  { type: 'old-man', name: 'Old Man', icon: '👴' },
-  { type: 'old-woman', name: 'Old Woman', icon: '👵' },
-  { type: 'dog', name: 'Dog', icon: '🐕' },
-  { type: 'cat', name: 'Cat', icon: '🐈' },
-  { type: 'bird', name: 'Bird', icon: '🐦' },
-  { type: 'cow', name: 'Cow', icon: '🐄' },
-  { type: 'goat', name: 'Goat', icon: '🐐' },
+const builtInCharacters: { type: CharacterType; name: string }[] = [
+  { type: 'boy', name: 'Boy' },
+  { type: 'girl', name: 'Girl' },
+  { type: 'child', name: 'Child' },
+  { type: 'man', name: 'Man' },
+  { type: 'woman', name: 'Woman' },
+  { type: 'old-man', name: 'Old Man' },
+  { type: 'old-woman', name: 'Old Woman' },
+  { type: 'baby', name: 'Baby' },
+  { type: 'doctor', name: 'Doctor' },
+  { type: 'teacher', name: 'Teacher' },
+  { type: 'farmer', name: 'Farmer' },
+  { type: 'chef', name: 'Chef' },
+  { type: 'soldier', name: 'Soldier' },
+  { type: 'princess', name: 'Princess' },
+  { type: 'king', name: 'King' },
+  { type: 'astronaut', name: 'Astronaut' },
+  { type: 'police', name: 'Police' },
+  { type: 'dog', name: 'Dog' },
+  { type: 'cat', name: 'Cat' },
+  { type: 'fox', name: 'Fox' },
+  { type: 'rabbit', name: 'Rabbit' },
+  { type: 'lion', name: 'Lion' },
+  { type: 'tiger', name: 'Tiger' },
+  { type: 'elephant', name: 'Elephant' },
+  { type: 'horse', name: 'Horse' },
+  { type: 'sheep', name: 'Sheep' },
+  { type: 'monkey', name: 'Monkey' },
+  { type: 'duck', name: 'Duck' },
+  { type: 'bird', name: 'Bird' },
+  { type: 'cow', name: 'Cow' },
+  { type: 'goat', name: 'Goat' },
 ];
 
-const builtInBackgrounds: { category: BackgroundCategory; name: string; icon: string }[] = [
-  { category: 'village', name: 'Village', icon: '🏘️' },
-  { category: 'city', name: 'City', icon: '🌆' },
-  { category: 'school', name: 'School', icon: '🏫' },
-  { category: 'market', name: 'Market', icon: '🏪' },
-  { category: 'house', name: 'House', icon: '🏠' },
-  { category: 'bedroom', name: 'Bedroom', icon: '🛏️' },
-  { category: 'park', name: 'Park', icon: '🏞️' },
-  { category: 'river', name: 'River', icon: '🌊' },
-  { category: 'farm', name: 'Farm', icon: '🌾' },
-  { category: 'road', name: 'Road', icon: '🛣️' },
+const builtInBackgrounds: { category: BackgroundCategory; name: string }[] = [
+  { category: 'village', name: 'Village' },
+  { category: 'city', name: 'City' },
+  { category: 'school', name: 'School' },
+  { category: 'market', name: 'Market' },
+  { category: 'house', name: 'House' },
+  { category: 'bedroom', name: 'Bedroom' },
+  { category: 'park', name: 'Park' },
+  { category: 'river', name: 'River' },
+  { category: 'farm', name: 'Farm' },
+  { category: 'road', name: 'Road' },
+  { category: 'office', name: 'Office' },
+  { category: 'forest', name: 'Forest' },
+  { category: 'beach', name: 'Beach' },
+  { category: 'mountain', name: 'Mountain' },
 ];
 
 const builtInProps = [
@@ -78,15 +109,101 @@ const actions: CharacterAction[] = [
   'wave', 'talk', 'point', 'clap', 'cry', 'laugh', 'dance', 'fall',
 ];
 
-const EXPRESSION_ICONS: Record<string, string> = {
-  neutral: '😐', happy: '😊', sad: '😢', angry: '😠', scared: '😨',
-  surprised: '😲', laughing: '😂', crying: '😭', thinking: '🤔', sleepy: '😴',
+const BG_ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Village: Home,
+  City: Building2,
+  School: School,
+  Market: Store,
+  House: Home,
+  Bedroom: BedDouble,
+  Park: TreePine,
+  River: Waves,
+  Farm: Tractor,
+  Road: Route,
+  Office: Building2,
+  Forest: TreePine,
+  Beach: Waves,
+  Mountain: Mountain,
 };
 
-const ACTION_ICONS: Record<string, string> = {
-  idle: '🧍', walk: '🚶', run: '🏃', jump: '🤸', sit: '🧘', stand: '🧍',
-  wave: '👋', talk: '🗣️', point: '👉', clap: '👏', cry: '😭', laugh: '😆', dance: '💃', fall: '🤕',
+const PROP_ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Chair: Armchair,
+  Table: TableIcon,
+  Phone: Smartphone,
+  Book: BookOpen,
+  Bag: ShoppingBag,
+  Car: Car,
+  Tree: TreePine,
+  Food: UtensilsCrossed,
+  Gift: Gift,
+  Ball: Circle,
 };
+
+const EXPR_ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  neutral: Meh,
+  happy: Smile,
+  sad: Frown,
+  angry: Angry,
+  scared: AlertTriangle,
+  surprised: AlertCircle,
+  laughing: Laugh,
+  crying: Droplets,
+  thinking: Brain,
+  sleepy: Moon,
+};
+
+const ACTION_ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  idle: PersonStanding,
+  walk: Footprints,
+  run: Activity,
+  jump: MoveVertical,
+  sit: Armchair,
+  stand: PersonStanding,
+  wave: Hand,
+  talk: MessageSquare,
+  point: Pointer,
+  clap: HandMetal,
+  cry: Droplets,
+  laugh: Laugh,
+  dance: Music,
+  fall: TrendingDown,
+};
+
+/** Renders a real procedural character illustration on a mini canvas (no emoji). */
+function CharacterThumb({ type, className = '' }: { type: string; className?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const w = c.width;
+    const h = c.height;
+    ctx.clearRect(0, 0, w, h);
+    const o: CanvasObject = {
+      id: 'thumb',
+      type: 'character',
+      x: 2,
+      y: 2,
+      width: w - 4,
+      height: h - 4,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      opacity: 1,
+      zIndex: 1,
+      characterType: type as CanvasObject['characterType'],
+      expression: 'neutral',
+      action: 'idle',
+    };
+    drawSceneContent(ctx, [o], {
+      id: 't', projectId: '', name: 't', order: 0, duration: 5000, backgroundColor: 'transparent',
+      cameraSettings: { x: 0, y: 0, zoom: 1, rotation: 0, keyframes: [] },
+      transition: { type: 'none', duration: 0 },
+    }, 0, 0, w, h, { playback: false });
+  }, [type]);
+  return <canvas ref={ref} width={56} height={68} className={`${className} object-contain`} />;
+}
 
 interface AssetPanelProps {
   isOpen: boolean;
@@ -488,7 +605,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
               {/* Character Library (cloud PNGs + public folder) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-gray-700">📚 Character Library</h3>
+                  <h3 className="text-sm font-medium text-gray-700 flex items-center gap-1.5"><BookMarked size={14} className="text-[var(--editor-accent)]" /> Character Library</h3>
                   <button
                     onClick={() => libraryInputRef.current?.click()}
                     disabled={libraryUploading}
@@ -551,11 +668,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                             className="w-14 h-16 object-contain mb-1 rounded"
                             loading="lazy"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                'data:image/svg+xml;utf8,' +
-                                encodeURIComponent(
-                                  '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="64"><rect width="56" height="64" rx="8" fill="#e2e8f0"/><text x="28" y="38" font-size="26" text-anchor="middle">🖼️</text></svg>'
-                                );
+                              (e.target as HTMLImageElement).style.visibility = 'hidden';
                             }}
                           />
                           <span className="text-[10px] text-gray-600 truncate w-full text-center">
@@ -625,7 +738,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                       onClick={() => handleAddCharacter(char)}
                       className="p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
                     >
-                      <span className="text-2xl mb-1">{char.icon}</span>
+                      <CharacterThumb type={char.type} className="mb-1" />
                       <span className="text-xs text-gray-600">{char.name}</span>
                     </button>
                   ))}
@@ -651,7 +764,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                           }
                           className="p-2 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
                         >
-                          <span className="text-2xl mb-1">🖼️</span>
+                          <ImageIcon size={20} className="mb-1 text-gray-400" />
                           <span className="text-xs text-gray-600 truncate w-full text-center">{c.name}</span>
                         </button>
                       ))}
@@ -674,13 +787,17 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                       <button
                         key={expr}
                         onClick={() => setObjectExpression(selectedObject.id, expr)}
-                        className={`px-2 py-1 rounded-lg text-xs capitalize transition-colors border ${
+                        className={`px-2 py-1 rounded-lg text-xs capitalize transition-colors border flex items-center gap-1 ${
                           selectedObject.expression === expr
                             ? 'bg-pink-500 text-white border-pink-600'
                             : 'bg-pink-50 text-pink-700 border-pink-100 hover:bg-pink-100'
                         }`}
                       >
-                        {EXPRESSION_ICONS[expr] || ''} {expr}
+                        {(() => {
+                          const ExprIcon = EXPR_ICON_MAP[expr] || Meh;
+                          return <ExprIcon size={12} />;
+                        })()}
+                        {expr}
                       </button>
                     ))}
                   </div>
@@ -704,13 +821,17 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                       <button
                         key={action}
                         onClick={() => setObjectAction(selectedObject.id, action)}
-                        className={`px-2 py-1 rounded-lg text-xs capitalize transition-colors border ${
+                        className={`px-2 py-1 rounded-lg text-xs capitalize transition-colors border flex items-center gap-1 ${
                           selectedObject.action === action
                             ? 'bg-blue-600 text-white border-blue-700'
                             : 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100'
                         }`}
                       >
-                        {ACTION_ICONS[action] || ''} {action}
+                        {(() => {
+                          const ActIcon = ACTION_ICON_MAP[action] || PersonStanding;
+                          return <ActIcon size={12} />;
+                        })()}
+                        {action}
                       </button>
                     ))}
                   </div>
@@ -731,16 +852,19 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
             <div className="space-y-4">
               <h3 className="text-sm font-medium text-gray-700">Built-in Backgrounds</h3>
               <div className="grid grid-cols-2 gap-2">
-                {builtInBackgrounds.map((bg) => (
-                  <button
-                    key={bg.category}
-                    onClick={() => handleAddBackground(bg)}
-                    className="p-4 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
-                  >
-                    <span className="text-3xl mb-2">{bg.icon}</span>
-                    <span className="text-sm text-gray-600">{bg.name}</span>
-                  </button>
-                ))}
+                {builtInBackgrounds.map((bg) => {
+                  const BgIcon = BG_ICON_MAP[bg.name] || ImageIcon;
+                  return (
+                    <button
+                      key={bg.category}
+                      onClick={() => handleAddBackground(bg)}
+                      className="p-4 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
+                    >
+                      <BgIcon size={26} className="mb-2 text-[var(--editor-accent)]" />
+                      <span className="text-sm text-gray-600">{bg.name}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {customBackgrounds.length > 0 && (
@@ -753,7 +877,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                         onClick={() => spawnObject('background', { name: b.name, imageUrl: b.imageUrl })}
                         className="p-2 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
                       >
-                        <span className="text-2xl mb-1">🖼️</span>
+                        <ImageIcon size={20} className="mb-1 text-gray-400" />
                         <span className="text-xs text-gray-600 truncate w-full text-center">{b.name}</span>
                       </button>
                     ))}
@@ -771,16 +895,19 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
             <div className="space-y-4">
               <h3 className="text-sm font-medium text-gray-700">Built-in Props</h3>
               <div className="grid grid-cols-3 gap-2">
-                {builtInProps.map((prop) => (
-                  <button
-                    key={prop.name}
-                    onClick={() => handleAddProp(prop)}
-                    className="p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
-                  >
-                    <span className="text-2xl mb-1">{prop.icon}</span>
-                    <span className="text-xs text-gray-600">{prop.name}</span>
-                  </button>
-                ))}
+                {builtInProps.map((prop) => {
+                  const PropIcon = PROP_ICON_MAP[prop.name] || ImageIcon;
+                  return (
+                    <button
+                      key={prop.name}
+                      onClick={() => handleAddProp(prop)}
+                      className="p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
+                    >
+                      <PropIcon size={20} className="mb-1 text-[var(--editor-accent)]" />
+                      <span className="text-xs text-gray-600">{prop.name}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {customProps.length > 0 && (
@@ -793,7 +920,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                         onClick={() => spawnObject('prop', { name: p.name, imageUrl: p.imageUrl })}
                         className="p-2 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
                       >
-                        <span className="text-2xl mb-1">🖼️</span>
+                        <ImageIcon size={20} className="mb-1 text-gray-400" />
                         <span className="text-xs text-gray-600 truncate w-full text-center">{p.name}</span>
                       </button>
                     ))}
@@ -906,7 +1033,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
               </div>
 
               <div className="pt-4 border-t">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">🎵 Sound Library (built-in)</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5"><Music size={14} className="text-[var(--editor-accent)]" /> Sound Library (built-in)</h3>
                 <p className="text-xs text-gray-500 mb-2">Preview বাজিয়ে পছন্দ হলে add করুন — Music track-এ যোগ হবে।</p>
                 <div className="grid grid-cols-2 gap-2">
                   {SOUND_LIBRARY.map((item) => (

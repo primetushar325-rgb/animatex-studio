@@ -28,6 +28,7 @@ import { ScenePanel } from './ScenePanel';
 import { VoiceRecorder } from './VoiceRecorder';
 import { ExportModal } from './ExportModal';
 import { AIVoicePanel } from './AIVoicePanel';
+import { ActionPicker } from './ActionPicker';
 import { GlobalSearch } from './GlobalSearch';
 import { TutorialOverlay } from './TutorialOverlay';
 import { AudioPlaybackEngine } from './AudioPlaybackEngine';
@@ -56,6 +57,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
   const [showTemplatesPanel, setShowTemplatesPanel] = useState(false);
   const [showAIVoicePanel, setShowAIVoicePanel] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  const [showActionPicker, setShowActionPicker] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState<'character' | 'media' | 'templates' | null>(null);
   const [showScenePanel, setShowScenePanel] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
@@ -254,7 +256,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       });
       setEditingTextId(obj.id);
     } else if (obj.type === 'character') {
-      openAssetTab('characters');
+      setShowActionPicker(true);
     }
   };
 
@@ -358,7 +360,11 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
   const handleGenerateScenes = () => applyStoryToEditor(aiPrompt);
 
   const handleRandomCharacter = () => {
-    const types = ['boy', 'girl', 'child', 'man', 'woman', 'old-man', 'old-woman', 'dog', 'cat', 'bird', 'cow', 'goat'] as const;
+    const types = [
+      'boy', 'girl', 'child', 'man', 'woman', 'old-man', 'old-woman',
+      'baby', 'doctor', 'teacher', 'farmer', 'chef', 'soldier', 'princess', 'king', 'astronaut', 'police',
+      'dog', 'cat', 'fox', 'rabbit', 'lion', 'tiger', 'elephant', 'horse', 'sheep', 'monkey', 'duck', 'bird', 'cow', 'goat',
+    ] as const;
     const type = types[Math.floor(Math.random() * types.length)];
     const st = useEditorStore.getState();
     const project = useProjectStore.getState().currentProject;
@@ -436,6 +442,10 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
         onSave={() => void handleAutoSave()}
         onEditText={openTextEditor}
         onExport={() => setShowExportModal(true)}
+        onAnimate={() => {
+          const sel = canvasObjects.find((o) => o.id === useEditorStore.getState().selectedObjectId);
+          if (sel?.type === 'character') setShowActionPicker(true);
+        }}
         onSearch={() => {
           setShowGlobalSearch(true);
           // warm the public character manifest so the first search is instant
@@ -539,6 +549,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       <ScenePanel isOpen={showScenePanel} onClose={() => setShowScenePanel(false)} />
       <VoiceRecorder isOpen={showVoiceRecorder} onClose={() => setShowVoiceRecorder(false)} />
       <AIVoicePanel isOpen={showAIVoicePanel} onClose={() => setShowAIVoicePanel(false)} />
+      <ActionPicker isOpen={showActionPicker} onClose={() => setShowActionPicker(false)} />
       <ExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} />
       <GlobalSearch
         isOpen={showGlobalSearch}

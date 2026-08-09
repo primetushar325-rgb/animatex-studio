@@ -115,7 +115,11 @@ export interface Character {
 export type CharacterType = 
   | 'boy' | 'girl' | 'child' | 'man' | 'woman' 
   | 'old-man' | 'old-woman' | 'dog' | 'cat' 
-  | 'bird' | 'cow' | 'goat' | 'custom';
+  | 'bird' | 'cow' | 'goat' | 'custom'
+  // Expanded set (Part 4)
+  | 'baby' | 'doctor' | 'teacher' | 'farmer' | 'chef' | 'soldier'
+  | 'princess' | 'king' | 'astronaut' | 'police'
+  | 'fox' | 'rabbit' | 'lion' | 'elephant' | 'duck' | 'horse' | 'sheep' | 'tiger' | 'monkey';
 
 export type CharacterExpression = 
   | 'neutral' | 'happy' | 'sad' | 'angry' | 'scared' 
@@ -124,7 +128,10 @@ export type CharacterExpression =
 export type CharacterAction = 
   | 'idle' | 'walk' | 'run' | 'jump' | 'sit' | 'stand' 
   | 'wave' | 'talk' | 'point' | 'clap' | 'cry' | 'laugh' 
-  | 'dance' | 'fall';
+  | 'dance' | 'fall'
+  // Extended pose set (used by the Action Picker)
+  | 'sit-kneel' | 'namaskar' | 'give' | 'sweep' | 'wash' | 'jog'
+  | 'sit-crossed' | 'sleep-stomach' | 'cook' | 'fly' | 'sleep-back';
 
 export type MouthShape = 
   | 'closed' | 'A' | 'E' | 'I' | 'O' | 'U' | 'M' | 'open';
@@ -229,7 +236,8 @@ export interface Background {
 
 export type BackgroundCategory = 
   | 'village' | 'city' | 'school' | 'market' | 'house' 
-  | 'bedroom' | 'park' | 'river' | 'farm' | 'road' | 'custom';
+  | 'bedroom' | 'park' | 'river' | 'farm' | 'road' | 'custom'
+  | 'office' | 'forest' | 'beach' | 'mountain';
 
 // Props
 export interface Prop {

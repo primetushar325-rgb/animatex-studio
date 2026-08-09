@@ -14,7 +14,7 @@ import { useProjectStore } from '@/store/project-store';
 import { useAuthStore } from '@/store/auth-store';
 import { getPublicCharacters, getCloudLibrary } from '@/lib/editor/characterLibrary';
 import type { LibraryCharacter } from '@/lib/editor/characterLibrary';
-import { Search, X, Sparkles, Star, Heart, Clock, Pencil } from 'lucide-react';
+import { Search, X, Sparkles, Star, Heart, Clock, Pencil, User, Image as ImageIcon } from 'lucide-react';
 import { useRecent, useFavorites, toggleFavorite, isFavorite, recordRecent, type AssetRef } from '@/lib/editor/useEditorUI';
 
 // ---------------------------------------------------------------------------
@@ -321,10 +321,20 @@ function CharacterCard({ name, imageUrl, placeholder, pose, onPose, onAdd }: Cha
           // eslint-disable-next-line @next/next/no-img-element
           <img src={imageUrl} alt={name} className="w-full h-full object-contain p-2" loading="lazy" />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-gradient-to-br from-[#1E1E28] to-[#16161C]">
-            <span className="text-4xl">{placeholder ? '🎭' : '🖼️'}</span>
-            {placeholder && (
-              <span className="text-[9px] text-[var(--editor-text-2)]">coming soon</span>
+          <div
+            className={`w-full h-full flex flex-col items-center justify-center gap-1 ${
+              placeholder
+                ? 'bg-[repeating-linear-gradient(45deg,#1E1E28,#1E1E28_6px,#23232F_6px,#23232F_12px)]'
+                : 'bg-gradient-to-br from-[#1E1E28] to-[#16161C]'
+            }`}
+          >
+            {placeholder ? (
+              <>
+                <User size={26} className="text-[var(--editor-text-2)]" />
+                <span className="text-[9px] text-[var(--editor-text-2)]">coming soon</span>
+              </>
+            ) : (
+              <ImageIcon size={26} className="text-[var(--editor-text-2)]" />
             )}
           </div>
         )}

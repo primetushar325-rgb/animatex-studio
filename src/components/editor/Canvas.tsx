@@ -51,7 +51,7 @@ interface DragState {
   startAngle?: number;
 }
 
-const HANDLE_HIT_PX = 12;
+const HANDLE_HIT_PX = 18; // generous touch target (>=24px on screen)
 
 export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
