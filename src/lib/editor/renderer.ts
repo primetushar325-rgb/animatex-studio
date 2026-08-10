@@ -394,11 +394,11 @@ export function getActionPose(action: CharacterAction, t: number): CharacterPose
       p.legR = 0.9;
       p.kneeL = 1.1;
       p.kneeR = 1.1;
-      p.armL = 0.18;
-      p.armR = 0.18;
+      p.armL = 0.18 + Math.sin(cycle(t, 2600)) * 0.05;
+      p.armR = 0.18 - Math.sin(cycle(t, 2600)) * 0.05;
       p.elbowL = 0.5;
       p.elbowR = 0.5;
-      p.bodyY = Math.sin(cycle(t, 3000)) * 0.008;
+      p.bodyY = Math.sin(cycle(t, 2600)) * 0.02;
       return p;
     }
     case 'walk': {
@@ -621,25 +621,26 @@ export function getActionPose(action: CharacterAction, t: number): CharacterPose
       p.legR = 0.95;
       p.kneeL = 1.45;
       p.kneeR = 1.45;
-      p.armL = 0.2;
-      p.armR = 0.2;
+      p.armL = 0.2 + Math.sin(w) * 0.05;
+      p.armR = 0.2 - Math.sin(w) * 0.05;
       p.elbowL = 0.6;
       p.elbowR = 0.6;
-      p.bodyY = Math.sin(w) * 0.008;
+      p.bodyY = Math.sin(w) * 0.02;
+      p.headTilt = Math.sin(w) * 0.03;
       return p;
     }
     case 'sleep-stomach': {
-      // lying on stomach — low + slight rock
-      const w = cycle(t, 3200);
+      // lying on stomach — rocking breathing
+      const w = cycle(t, 2600);
       p.lean = 0.28;
-      p.bodyY = 0.1 + Math.sin(w) * 0.006;
-      p.armL = 0.45;
-      p.armR = 0.45;
+      p.bodyY = 0.1 + Math.sin(w) * 0.02;
+      p.armL = 0.45 + Math.sin(w) * 0.04;
+      p.armR = 0.45 - Math.sin(w) * 0.04;
       p.elbowL = 0.9;
       p.elbowR = 0.9;
       p.legL = 0.55;
       p.legR = 0.55;
-      p.headTilt = -0.2;
+      p.headTilt = -0.2 + Math.sin(w) * 0.04;
       p.blink = true;
       return p;
     }
@@ -670,11 +671,11 @@ export function getActionPose(action: CharacterAction, t: number): CharacterPose
     }
     case 'sleep-back': {
       // lying on back
-      const w = cycle(t, 3400);
+      const w = cycle(t, 2800);
       p.lean = -0.1;
-      p.bodyY = 0.08 + Math.sin(w) * 0.005;
-      p.armL = 0.7;
-      p.armR = 0.7;
+      p.bodyY = 0.08 + Math.sin(w) * 0.02;
+      p.armL = 0.7 + Math.sin(w) * 0.04;
+      p.armR = 0.7 - Math.sin(w) * 0.04;
       p.elbowL = 0.6;
       p.elbowR = 0.6;
       p.legL = 0.35;

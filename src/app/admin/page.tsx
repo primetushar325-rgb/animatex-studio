@@ -1,10 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import {
+  LayoutDashboard,
+  Users as UsersIcon,
+  Coins,
+  Image as ImageIcon,
+  Flag,
+  ArrowLeft,
+  Search,
+  ShieldCheck,
+  ShieldOff,
+  Crown,
+  Ban,
+  CheckCircle2,
+  Trash2,
+  Loader2,
+  BarChart3,
+} from 'lucide-react';
 import { useAuthStore } from '@/store/auth-store';
 import { Logo } from '@/components/brand/Logo';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface AdminStats {
   totalUsers: number;
@@ -14,35 +35,83 @@ interface AdminStats {
   totalExports: number;
   aiUsage: number;
   storageUsageMB: number;
+  topCharacters: { name: string; count: number }[];
+  topBackgrounds: { name: string; count: number }[];
+  topTemplates: { name: string; count: number }[];
+  creditUsage: { userId: string; email: string; used: number; remaining: number }[];
 }
 
-interface UserData {
+interface UserRow {
   id: string;
   email: string;
   displayName: string;
   role: string;
-  status: string;
+  plan: 'free' | 'pro';
+  status: 'active' | 'suspended' | 'banned';
+  creditsUsed: number;
+  creditsRemaining: number;
+  projectCount: number;
   createdAt: number;
   lastActiveAt: number;
-  projectCount: number;
-  storageUsed: number;
 }
+
+interface AssetRow {
+  id: string;
+  ownerId: string;
+  email: string;
+  kind: 'character' | 'background' | 'prop';
+  name: string;
+  imageUrl: string;
+  status: string;
+  createdAt: number;
+}
+
+type Tab = 'dashboard' | 'users' | 'credits' | 'assets' | 'flags';
+
+const EMPTY_STATS: AdminStats = {
+  totalUsers: 0, activeUsers: 0, totalProjects: 0, totalScenes: 0,
+  totalExports: 0, aiUsage: 0, storageUsageMB: 0,
+  topCharacters: [], topBackgrounds: [], topTemplates: [], creditUsage: [],
+};
 
 export default function AdminPage() {
   const router = useRouter();
   const { user, loading, initialized, initialize } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'projects' | 'activity' | 'features' | 'announcements'>('dashboard');
-  const [stats, setStats] = useState<AdminStats>({
-    totalUsers: 0,
-    activeUsers: 0,
-    totalProjects: 0,
-    totalScenes: 0,
-    totalExports: 0,
-    aiUsage: 0,
-    storageUsageMB: 0,
-  });
-  const [users, setUsers] = useState<UserData[]>([]);
+  const [tab, setTab] = useState<Tab>('dashboard');
+  const [stats, setStats] = useState<AdminStats>(EMPTY_STATS);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [assets, setAssets] = useState<AssetRow[]>([]);
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [loadingData, setLoadingData] = useState(true);
+  const [search, setSearch] = useState('');
+  const [planFilter, setPlanFilter] = useState<'all' | 'free' | 'pro'>('all');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const showNotice = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 3000);
+  };
+
+  const loadAdminData = useCallback(async () => {
+    setLoadingData(true);
+    try {
+      const [statsRes, usersRes, assetsRes, flagsRes] = await Promise.all([
+        fetch('/api/admin/stats').then((r) => r.json()),
+        fetch('/api/admin/users').then((r) => r.json()),
+        fetch('/api/admin/assets').then((r) => r.json()),
+        fetch('/api/admin/flags').then((r) => r.json()),
+      ]);
+      setStats(statsRes || EMPTY_STATS);
+      setUsers(usersRes.users || []);
+      setAssets(assetsRes.assets || []);
+      setFlags(flagsRes.flags || {});
+    } catch {
+      // keep empty state
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
 
   useEffect(() => {
     initialize();
@@ -54,298 +123,450 @@ export default function AdminPage() {
         router.push('/auth/login?redirect=/admin');
         return;
       }
-
-      if (!user.isAdmin) {
-        // Not admin - show access denied
-        return;
-      }
-
-      loadAdminData();
+      if (!user.isAdmin) return; // access denied shown below
+      void loadAdminData();
     }
-  }, [initialized, loading, user, router]);
+  }, [initialized, loading, user, router, loadAdminData]);
 
-  const loadAdminData = async () => {
-    setLoadingData(true);
+  // actions ----------------------------------------------------------------
+
+  const userAction = async (id: string, action: string, value?: boolean) => {
+    setBusy(id);
     try {
-      const res = await fetch('/api/admin/stats');
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: id, action, value }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadAdminData();
+        showNotice('User updated ✓');
       }
-
-      const usersRes = await fetch('/api/admin/users');
-      if (usersRes.ok) {
-        const usersData = await usersRes.json();
-        setUsers(usersData.users || []);
-      }
-    } catch (err) {
-      console.error('Failed to load admin data:', err);
+    } catch {
+      showNotice('Action failed');
     } finally {
-      setLoadingData(false);
+      setBusy(null);
     }
   };
 
+  const assetAction = async (ownerId: string, assetId: string, action: 'approve' | 'remove') => {
+    setBusy(assetId);
+    try {
+      if (action === 'remove') {
+        await fetch(`/api/admin/assets?ownerId=${ownerId}&assetId=${assetId}`, { method: 'DELETE' });
+      } else {
+        await fetch('/api/admin/assets', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ownerId, assetId, status: 'approved' }),
+        });
+      }
+      await loadAdminData();
+      showNotice(action === 'remove' ? 'Asset removed' : 'Asset approved');
+    } catch {
+      showNotice('Action failed');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleFlag = async (key: string) => {
+    const next = { ...flags, [key]: !flags[key] };
+    setFlags(next);
+    try {
+      await fetch('/api/admin/flags', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flags: next }),
+      });
+      showNotice('Flag updated ✓');
+    } catch {
+      showNotice('Flag update failed (stored locally)');
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Access control
+  // -------------------------------------------------------------------------
+
   if (!initialized || loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <Logo size={64} />
+      <div className="min-h-screen editor-surface flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--editor-accent)]" />
       </div>
     );
   }
 
-  if (!user?.isAdmin) {
+  if (!user) return null;
+
+  if (!user.isAdmin) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl mb-4">🔒</div>
-          <h1 className="text-2xl font-bold text-white mb-2">Access Denied</h1>
-          <p className="text-slate-400 mb-4">You do not have permission to access this page.</p>
-          <Link
-            href="/"
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Go Home
+      <div className="min-h-screen editor-surface flex items-center justify-center p-6">
+        <div className="editor-panel border border-[var(--editor-border)] rounded-2xl p-10 text-center max-w-sm">
+          <ShieldOff size={40} className="mx-auto mb-4 text-red-400" />
+          <h1 className="text-white font-bold text-xl mb-2">Access Denied</h1>
+          <p className="text-[var(--editor-text-2)] text-sm mb-6">
+            This area is restricted to administrators.
+          </p>
+          <Link href="/studio" className="inline-block px-5 py-2.5 editor-gradient text-white text-sm font-medium rounded-xl">
+            Back to Studio
           </Link>
         </div>
       </div>
     );
   }
 
-  const tabs = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'users', label: 'Users', icon: '👥' },
-    { id: 'projects', label: 'Projects', icon: '🎬' },
-    { id: 'activity', label: 'Activity', icon: '📝' },
-    { id: 'features', label: 'Features', icon: '⚙️' },
-    { id: 'announcements', label: 'Announcements', icon: '📢' },
-  ] as const;
+  const filteredUsers = users.filter((u) => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch =
+      !q || u.email.toLowerCase().includes(q) || u.displayName.toLowerCase().includes(q);
+    const matchesPlan = planFilter === 'all' || u.plan === planFilter;
+    return matchesSearch && matchesPlan;
+  });
+
+  const statCard = (label: string, value: string | number, icon: React.ReactNode) => (
+    <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[var(--editor-text-2)] text-xs">{label}</span>
+        <span className="text-[var(--editor-accent)]">{icon}</span>
+      </div>
+      <p className="text-2xl font-bold text-white">{value}</p>
+    </div>
+  );
+
+  const tabBtn = (t: Tab, label: string, icon: React.ReactNode) => (
+    <button
+      onClick={() => setTab(t)}
+      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm whitespace-nowrap transition-colors ${
+        tab === t
+          ? 'editor-gradient text-white font-medium'
+          : 'editor-panel-2 text-[var(--editor-text-2)] hover:text-white'
+      }`}
+    >
+      {icon} {label}
+    </button>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-900">
-      {/* Header */}
-      <header className="bg-slate-800/80 backdrop-blur-lg border-b border-slate-700 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
-              <Link href="/studio" className="text-slate-400 hover:text-white">
-                ←
-              </Link>
-              <Logo size={36} />
-              <div>
-                <h1 className="text-lg font-bold text-white">Admin Panel</h1>
-                <p className="text-xs text-slate-400">AnimateX Administration</p>
-              </div>
-            </div>
-            <div className="text-sm text-slate-400">
-              {user.email}
-            </div>
-          </div>
+    <div className="min-h-screen editor-surface">
+      {/* Top bar */}
+      <div className="border-b border-[var(--editor-border)] px-4 py-3 flex items-center gap-3 sticky top-0 editor-surface z-20">
+        <Link href="/" className="flex items-center gap-2 text-[var(--editor-text-2)] hover:text-white">
+          <ArrowLeft size={18} />
+        </Link>
+        <Logo size={28} />
+        <span className="font-bold text-white">Admin Panel</span>
+        <span className="ml-auto text-[10px] px-2 py-1 rounded-full editor-gradient text-white font-semibold">
+          {user.email}
+        </span>
+      </div>
+
+      {notice && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-green-500/20 border border-green-500/40 text-green-300 text-sm">
+          {notice}
         </div>
-      </header>
+      )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
-          {/* Sidebar */}
-          <div className="lg:w-64 flex-shrink-0">
-            <nav className="bg-slate-800 border border-slate-700 rounded-xl p-2 space-y-1">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    activeTab === tab.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  <span>{tab.icon}</span>
-                  <span className="font-medium">{tab.label}</span>
-                </button>
-              ))}
-            </nav>
+      <div className="max-w-6xl mx-auto p-4">
+        {/* Tabs */}
+        <div className="flex gap-2 overflow-x-auto editor-scroll pb-4">
+          {tabBtn('dashboard', 'Dashboard', <LayoutDashboard size={15} />)}
+          {tabBtn('users', 'Users', <UsersIcon size={15} />)}
+          {tabBtn('credits', 'Credits', <Coins size={15} />)}
+          {tabBtn('assets', 'Assets', <ImageIcon size={15} />)}
+          {tabBtn('flags', 'Feature Flags', <Flag size={15} />)}
+        </div>
+
+        {loadingData ? (
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="w-8 h-8 animate-spin text-[var(--editor-accent)]" />
           </div>
+        ) : (
+          <>
+            {/* ============ DASHBOARD ============ */}
+            {tab === 'dashboard' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {statCard('Total Users', stats.totalUsers, <UsersIcon size={16} />)}
+                  {statCard('Active Users', stats.activeUsers, <ShieldCheck size={16} />)}
+                  {statCard('Projects', stats.totalProjects, <BarChart3 size={16} />)}
+                  {statCard('AI Usage', stats.aiUsage, <Coins size={16} />)}
+                </div>
 
-          {/* Content */}
-          <div className="flex-1">
-            {loadingData ? (
-              <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-4">
+                    <h3 className="text-white font-semibold text-sm mb-3">Most-used Characters</h3>
+                    {stats.topCharacters.length === 0 ? (
+                      <p className="text-xs text-[var(--editor-text-2)]">No data yet</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {stats.topCharacters.map((c) => (
+                          <li key={c.name} className="flex justify-between text-xs text-[var(--editor-text-2)]">
+                            <span>{c.name}</span>
+                            <span className="text-white font-medium">{c.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-4">
+                    <h3 className="text-white font-semibold text-sm mb-3">Most-used Backgrounds</h3>
+                    {stats.topBackgrounds.length === 0 ? (
+                      <p className="text-xs text-[var(--editor-text-2)]">No data yet</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {stats.topBackgrounds.map((b) => (
+                          <li key={b.name} className="flex justify-between text-xs text-[var(--editor-text-2)]">
+                            <span>{b.name}</span>
+                            <span className="text-white font-medium">{b.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-[var(--editor-text-2)]">
+                  Note: Firebase Admin SDK env vars সেট না থাকলে এখানে খালি/০ দেখাবে — Vercel-এ FIREBASE_ADMIN_* যোগ করলে real data আসবে।
+                </p>
               </div>
-            ) : (
-              <>
-                {/* Dashboard */}
-                {activeTab === 'dashboard' && (
-                  <div className="space-y-6">
-                    <h2 className="text-2xl font-bold text-white">Dashboard</h2>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {[
-                        { icon: '👥', value: stats.totalUsers, label: 'Total Users' },
-                        { icon: '🟢', value: stats.activeUsers, label: 'Active Users' },
-                        { icon: '🎬', value: stats.totalProjects, label: 'Total Projects' },
-                        { icon: '📤', value: stats.totalExports, label: 'Total Exports' },
-                      ].map((stat, i) => (
-                        <div key={i} className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-                          <div className="text-3xl mb-2">{stat.icon}</div>
-                          <div className="text-2xl font-bold text-white">{stat.value}</div>
-                          <div className="text-sm text-slate-400">{stat.label}</div>
-                        </div>
+            )}
+
+            {/* ============ USERS ============ */}
+            {tab === 'users' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--editor-text-2)]" />
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search by email or name…"
+                      className="editor-input w-full pl-9 pr-3 py-2.5 text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-1.5">
+                    {(['all', 'free', 'pro'] as const).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setPlanFilter(p)}
+                        className={`px-3 py-2 rounded-lg text-xs capitalize transition-colors ${
+                          planFilter === p ? 'editor-gradient text-white' : 'editor-panel-2 text-[var(--editor-text-2)]'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[640px]">
+                    <thead className="text-[var(--editor-text-2)] border-b border-[var(--editor-border)]">
+                      <tr>
+                        <th className="px-3 py-2.5 font-medium">User</th>
+                        <th className="px-3 py-2.5 font-medium">Plan</th>
+                        <th className="px-3 py-2.5 font-medium">Status</th>
+                        <th className="px-3 py-2.5 font-medium">Projects</th>
+                        <th className="px-3 py-2.5 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredUsers.map((u) => (
+                        <tr key={u.id} className="border-b border-[var(--editor-border)] last:border-0">
+                          <td className="px-3 py-2.5">
+                            <p className="text-white font-medium">{u.displayName || '—'}</p>
+                            <p className="text-[var(--editor-text-2)] text-[10px]">{u.email}</p>
+                            {u.role === 'admin' && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--editor-accent)]/20 text-[var(--editor-accent)]">ADMIN</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.plan === 'pro' ? 'bg-[var(--editor-accent)]/20 text-[var(--editor-accent)]' : 'bg-[#33333F] text-[var(--editor-text-2)]'}`}>
+                              {u.plan === 'pro' ? 'PRO' : 'Free'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`${u.status === 'active' ? 'text-green-400' : 'text-red-400'}`}>
+                              {u.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-white">{u.projectCount}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex gap-1">
+                              {u.plan === 'pro' ? (
+                                <button
+                                  onClick={() => void userAction(u.id, 'downgrade')}
+                                  disabled={busy === u.id}
+                                  className="px-2 py-1 rounded-lg bg-[#33333F] hover:bg-[#44444F] text-white text-[10px] disabled:opacity-40"
+                                  title="Downgrade to Free"
+                                >
+                                  <Crown size={12} /> Free
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => void userAction(u.id, 'upgrade')}
+                                  disabled={busy === u.id}
+                                  className="px-2 py-1 rounded-lg bg-[var(--editor-accent)]/20 hover:bg-[var(--editor-accent)]/30 text-[var(--editor-accent)] text-[10px] disabled:opacity-40"
+                                  title="Upgrade to Pro"
+                                >
+                                  <Crown size={12} /> Pro
+                                </button>
+                              )}
+                              {u.status === 'active' ? (
+                                <button
+                                  onClick={() => void userAction(u.id, 'suspend')}
+                                  disabled={busy === u.id}
+                                  className="px-2 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-[10px] disabled:opacity-40"
+                                  title="Suspend"
+                                >
+                                  <Ban size={12} />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => void userAction(u.id, 'unsuspend')}
+                                  disabled={busy === u.id}
+                                  className="px-2 py-1 rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-400 text-[10px] disabled:opacity-40"
+                                  title="Restore"
+                                >
+                                  <CheckCircle2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       ))}
-                    </div>
+                      {filteredUsers.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-8 text-center text-[var(--editor-text-2)]">
+                            No users {adminConfiguredHint()}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-                        <h3 className="font-semibold text-white mb-4">AI Usage</h3>
-                        <div className="text-3xl font-bold text-purple-400">{stats.aiUsage}</div>
-                        <div className="text-sm text-slate-400">Requests this month</div>
+            {/* ============ CREDITS ============ */}
+            {tab === 'credits' && (
+              <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-4">
+                <h3 className="text-white font-semibold text-sm mb-3">AI Credits Usage (free tier = 10 credits)</h3>
+                {stats.creditUsage.length === 0 ? (
+                  <p className="text-xs text-[var(--editor-text-2)]">No usage data yet — Firebase Admin SDK সেট করলে real data আসবে।</p>
+                ) : (
+                  <div className="space-y-2">
+                    {stats.creditUsage.map((c) => (
+                      <div key={c.userId} className="flex items-center justify-between text-xs">
+                        <span className="text-[var(--editor-text-2)] truncate max-w-[40%]">{c.email || c.userId}</span>
+                        <div className="flex-1 mx-3 h-2 rounded-full bg-[#22222C] overflow-hidden">
+                          <div
+                            className="h-full editor-gradient"
+                            style={{ width: `${(c.used / 10) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-white whitespace-nowrap">{c.used} used / {c.remaining} left</span>
                       </div>
-                      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-                        <h3 className="font-semibold text-white mb-4">Storage</h3>
-                        <div className="text-3xl font-bold text-blue-400">{stats.storageUsageMB} MB</div>
-                        <div className="text-sm text-slate-400">Total storage used</div>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 )}
+              </div>
+            )}
 
-                {/* Users */}
-                {activeTab === 'users' && (
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-2xl font-bold text-white">Users</h2>
-                      <span className="text-sm text-slate-400">{users.length} users</span>
-                    </div>
-
-                    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-                      <table className="w-full">
-                        <thead className="bg-slate-700/50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">User</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">Role</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">Projects</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-700">
-                          {users.map((u) => (
-                            <tr key={u.id}>
-                              <td className="px-6 py-4">
-                                <div>
-                                  <div className="font-medium text-white">{u.displayName || 'No name'}</div>
-                                  <div className="text-sm text-slate-400">{u.email}</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className={`px-2 py-1 rounded text-xs ${
-                                  u.role === 'admin' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-600 text-slate-300'
-                                }`}>
-                                  {u.role}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className={`px-2 py-1 rounded text-xs ${
-                                  u.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                                }`}>
-                                  {u.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-sm text-slate-400">
-                                {u.projectCount}
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex gap-2">
-                                  <button className="text-blue-400 hover:text-blue-300 text-sm">View</button>
-                                  <button className="text-yellow-400 hover:text-yellow-300 text-sm">
-                                    {u.status === 'active' ? 'Suspend' : 'Restore'}
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                          {users.length === 0 && (
-                            <tr>
-                              <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
-                                No users found
-                              </td>
-                            </tr>
+            {/* ============ ASSETS ============ */}
+            {tab === 'assets' && (
+              <div className="space-y-3">
+                <p className="text-xs text-[var(--editor-text-2)]">
+                  Bulk-imported & uploaded characters/backgrounds — review, approve, or remove.
+                </p>
+                {assets.length === 0 ? (
+                  <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-10 text-center">
+                    <ImageIcon size={32} className="mx-auto mb-3 text-[var(--editor-text-2)]" />
+                    <p className="text-xs text-[var(--editor-text-2)]">
+                      No assets yet. Firebase Admin SDK সেট করলে user-uploaded library assets এখানে দেখা যাবে।
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {assets.map((a) => (
+                      <div key={a.id} className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-3">
+                        <div className="flex items-center gap-3 mb-2">
+                          {a.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={a.imageUrl} alt={a.name} className="w-12 h-14 object-contain rounded-lg bg-[#22222C]" />
+                          ) : (
+                            <div className="w-12 h-14 rounded-lg bg-[#22222C] flex items-center justify-center">
+                              <ImageIcon size={18} className="text-[var(--editor-text-2)]" />
+                            </div>
                           )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Features */}
-                {activeTab === 'features' && (
-                  <div className="space-y-6">
-                    <h2 className="text-2xl font-bold text-white">Feature Flags</h2>
-
-                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4">
-                      {[
-                        { id: 'aiAnimation', name: 'AI Animation', enabled: true },
-                        { id: 'aiVoice', name: 'AI Voice', enabled: true },
-                        { id: 'aiCharacter', name: 'AI Character Generation', enabled: false },
-                        { id: 'aiBackground', name: 'AI Background Generation', enabled: false },
-                        { id: 'lipSync', name: 'Lip Sync', enabled: true },
-                        { id: 'export', name: 'Video Export', enabled: true },
-                        { id: 'voiceRecording', name: 'Voice Recording', enabled: true },
-                      ].map((feature) => (
-                        <div key={feature.id} className="flex items-center justify-between py-2">
-                          <span className="font-medium text-white">{feature.name}</span>
+                          <div className="min-w-0">
+                            <p className="text-white text-sm font-medium truncate">{a.name}</p>
+                            <p className="text-[10px] text-[var(--editor-text-2)]">
+                              {a.kind} · {a.email}
+                            </p>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded ${a.status === 'approved' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-300'}`}>
+                              {a.status}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
                           <button
-                            className={`relative w-12 h-6 rounded-full transition-colors ${
-                              feature.enabled ? 'bg-green-500' : 'bg-slate-600'
-                            }`}
+                            onClick={() => void assetAction(a.ownerId, a.id, 'approve')}
+                            disabled={busy === a.id}
+                            className="flex-1 py-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-400 text-[10px] font-medium disabled:opacity-40"
                           >
-                            <span
-                              className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                                feature.enabled ? 'left-7' : 'left-1'
-                              }`}
-                            />
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => void assetAction(a.ownerId, a.id, 'remove')}
+                            disabled={busy === a.id}
+                            className="flex-1 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-[10px] font-medium disabled:opacity-40"
+                          >
+                            <Trash2 size={11} className="inline mr-1" /> Remove
                           </button>
                         </div>
-                      ))}
-                    </div>
-
-                    <h3 className="text-xl font-bold text-white mt-8">Usage Limits</h3>
-                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        {[
-                          { label: 'Max Projects (Free)', value: 20 },
-                          { label: 'AI Requests/Day (Free)', value: 10 },
-                          { label: 'Exports/Day (Free)', value: 5 },
-                          { label: 'Storage MB (Free)', value: 500 },
-                        ].map((limit, i) => (
-                          <div key={i}>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">{limit.label}</label>
-                            <input
-                              type="number"
-                              defaultValue={limit.value}
-                              className="w-full px-3 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-white"
-                            />
-                          </div>
-                        ))}
                       </div>
-                      <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        Save Changes
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ============ FLAGS ============ */}
+            {tab === 'flags' && (
+              <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-4">
+                <h3 className="text-white font-semibold text-sm mb-1">Site-wide Feature Flags</h3>
+                <p className="text-xs text-[var(--editor-text-2)] mb-4">
+                  Toggle features without redeploy (Firestore-এ সেভ হয়; API না থাকলে localStorage-এ)।
+                </p>
+                <div className="space-y-2">
+                  {Object.entries(flags).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between py-2 border-b border-[var(--editor-border)] last:border-0">
+                      <span className="text-sm text-white capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
+                      <button
+                        onClick={() => void toggleFlag(key)}
+                        className="relative w-12 h-6 rounded-full transition-colors"
+                        style={{ background: value ? 'linear-gradient(135deg,#5B8DEF,#8B5CF6)' : '#33333F' }}
+                      >
+                        <span
+                          className="absolute top-1 w-4 h-4 rounded-full bg-white transition-all"
+                          style={{ left: value ? 28 : 4 }}
+                        />
                       </button>
                     </div>
-                  </div>
-                )}
-
-                {/* Other tabs placeholder */}
-                {(activeTab === 'projects' || activeTab === 'activity' || activeTab === 'announcements') && (
-                  <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-400">
-                    <div className="text-4xl mb-4">🚧</div>
-                    <p>This section is under development</p>
-                  </div>
-                )}
-              </>
+                  ))}
+                </div>
+              </div>
             )}
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
+
+  function adminConfiguredHint(): string {
+    return process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? '' : '(Firebase Admin SDK সেট করুন)';
+  }
 }

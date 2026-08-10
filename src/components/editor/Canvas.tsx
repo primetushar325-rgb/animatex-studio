@@ -17,6 +17,8 @@ import type { CanvasObject } from '@/types/animation';
 interface CanvasProps {
   /** Called when an object is double-clicked (e.g. open text editor). */
   onDoubleClickObject?: (obj: CanvasObject) => void;
+  /** Called when a character is TAPPED (pointer down+up without drag). */
+  onTapCharacter?: (obj: CanvasObject) => void;
 }
 
 interface Point {
@@ -53,7 +55,7 @@ interface DragState {
 
 const HANDLE_HIT_PX = 18; // generous touch target (>=24px on screen)
 
-export function Canvas({ onDoubleClickObject }: CanvasProps) {
+export function Canvas({ onDoubleClickObject, onTapCharacter }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -61,6 +63,11 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
   const dragRef = useRef<DragState | null>(null);
   const animClockRef = useRef(0);
   const lastFrameRef = useRef(0);
+  // tap detection: pointer-down position + whether the down was a multi-select
+  const downScreenRef = useRef<{ x: number; y: number } | null>(null);
+  const downPointRef = useRef<Point | null>(null);
+  const multiDownRef = useRef(false);
+  const TAP_THRESHOLD_PX = 8;
 
   const {
     canvasObjects,
@@ -393,6 +400,11 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
     const point = getCanvasCoords(e.clientX, e.clientY);
     const multi = e.shiftKey || e.metaKey || e.ctrlKey;
 
+    // remember down-position for tap detection (drag = no popup)
+    downScreenRef.current = { x: e.clientX, y: e.clientY };
+    downPointRef.current = point;
+    multiDownRef.current = multi;
+
     // 1) Handles of the primary selected object
     if (selectedObject && !multi) {
       const hit = hitTestHandles(selectedObject, point.x, point.y);
@@ -561,6 +573,25 @@ export function Canvas({ onDoubleClickObject }: CanvasProps) {
       dragRef.current = null;
       setDragging(false);
       commitTransform();
+    }
+
+    // TAP detection: pointer went down & up with almost no movement and no
+    // multi-select → treat as a tap. If a character was tapped, open the
+    // Action Picker (same motion source as the previews).
+    const downScreen = downScreenRef.current;
+    const downPoint = downPointRef.current;
+    const wasMulti = multiDownRef.current;
+    downScreenRef.current = null;
+    downPointRef.current = null;
+    multiDownRef.current = false;
+    if (!wasMulti && downScreen && downPoint && onTapCharacter) {
+      const dist = Math.hypot(e.clientX - downScreen.x, e.clientY - downScreen.y);
+      if (dist <= TAP_THRESHOLD_PX) {
+        const obj = findObjectAtPosition(downPoint.x, downPoint.y);
+        if (obj && obj.type === 'character') {
+          onTapCharacter(obj);
+        }
+      }
     }
   };
 

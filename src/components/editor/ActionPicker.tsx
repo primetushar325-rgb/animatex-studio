@@ -186,7 +186,7 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
           <p className="text-[10px] uppercase tracking-wider text-[var(--editor-text-2)] mb-2 flex items-center gap-1">
             <Sparkles size={11} className="text-[var(--editor-accent-2)]" /> Animations
           </p>
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 gap-3">
             {filtered.map((tile) => {
               const isActive =
                 !tile.soon &&

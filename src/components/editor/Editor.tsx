@@ -103,6 +103,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
     updateCanvasObject,
     addCanvasObject,
     addClip,
+    selectObject,
   } = useEditorStore();
   const { openProject, currentProject, saveProject } = useProjectStore();
 
@@ -455,7 +456,15 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       />
 
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        <Canvas onDoubleClickObject={handleDoubleClickObject} />
+        <Canvas
+          onDoubleClickObject={handleDoubleClickObject}
+          onTapCharacter={(obj) => {
+            if (obj.type === 'character') {
+              selectObject(obj.id);
+              setShowActionPicker(true);
+            }
+          }}
+        />
 
         {/* Bottom Tab Bar */}
         <div className="editor-surface border-t border-[var(--editor-border)] px-1 pt-1.5 pb-[max(0.4rem,env(safe-area-inset-bottom))]">

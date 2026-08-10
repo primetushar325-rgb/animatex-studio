@@ -341,3 +341,20 @@ editor's character picker and get drawn on the canvas when clicked.
 - **No emoji in asset panels**: Characters tiles now render real procedural 2D character art on mini canvases; Backgrounds/Props/Expressions/Actions use lucide icons; headers use lucide icons. Zero emoji in Characters/Backgrounds/Props panels.
 - **Selection handles**: 2px solid accent border + glow, 12px corner / 9px edge filled handles with white outline, 18px hit tolerance (≈24px touch target), rotation handle circle + connector.
 - **Asset expansion**: 31 characters (doctors, farmers, chefs, soldiers, astronauts, kings, princesses, + fox/rabbit/lion/tiger/elephant/horse/sheep/monkey/duck with species features) and 14 themed backgrounds (office, forest, beach, mountain + color/weather variety).
+
+---
+
+## 🆕 PART 6 — Character Action Popup Rebuild (2026-08)
+
+- Old static "Actions" button row (`Idle, Walk, … Fall`) **completely removed** from the Assets panel (code deleted, not hidden).
+- **New Action Picker popup**: tap any character on the canvas → bottom sheet with character name + thumbnail + "Selected" badge, "Search Animations", FRONT / 3/4 FRONT / 3/4 BACK tabs, and a 2-column grid of 20 action tiles.
+- Every tile shows a **live looping preview** of the actual motion on a mini canvas (Walk walks, Run runs, Sit settles & breathes, Talk gestures, Jump bounces) — same `getActionPose` animation source as the real canvas character, so preview and applied motion can never drift.
+- Tapping a tile applies the action to the canvas character immediately and records a keyframe on its timeline clip; reopening highlights the currently-applied tile.
+- Verified: all 20 tiles animate over time (automated pose-diff test), old row absent, typecheck/lint/build pass.
+
+---
+
+## 🆕 PART 7 — Admin Panel + Premium Home Page (2026-08)
+
+- **Admin panel completed** (`/admin`): user management (search/filter, Free↔Pro upgrade/downgrade, suspend/restore), credits usage overview, asset-library review (approve/remove uploaded characters/backgrounds/props), analytics (totals + most-used assets), site-wide feature flags (toggle without redeploy). Admin-only (Access Denied for regular users; hidden from navigation). Firestore-backed with graceful empty state when Admin SDK env isn't set.
+- **Home page redesigned**: zero emoji (all lucide icons), black + blue/violet theme matching the editor, hero with a **real looping animated character demo** (canvas), feature cards with gradient icon chips + hover, templates with icons, polished demo placeholder, **Free vs Pro pricing section**, auto-updating footer year, scroll fade-ins, lazy hero.

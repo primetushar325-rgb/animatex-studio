@@ -17,8 +17,7 @@ import {
   Mic, Home, Building2, School, Store, BedDouble, TreePine, Waves, Tractor, Route,
   Armchair, Table as TableIcon, Smartphone, BookOpen, ShoppingBag, Car, UtensilsCrossed,
   Gift, Circle, Meh, Smile, Frown, Angry, AlertTriangle, AlertCircle, Laugh, Droplets,
-  Brain, Moon, PersonStanding, Footprints, Activity, MoveVertical, Hand, MessageSquare,
-  Pointer, HandMetal, Music, TrendingDown, Image as ImageIcon, Mountain, BookMarked,
+  Brain, Moon, Music, Image as ImageIcon, Mountain, BookMarked,
 } from 'lucide-react';
 import { drawSceneContent } from '@/lib/editor/renderer';
 import type { CanvasObject } from '@/types/animation';
@@ -26,7 +25,6 @@ import type {
   CharacterType,
   BackgroundCategory,
   CharacterExpression,
-  CharacterAction,
   Character,
   Background,
   Prop,
@@ -104,11 +102,6 @@ const expressions: CharacterExpression[] = [
   'surprised', 'laughing', 'crying', 'thinking', 'sleepy',
 ];
 
-const actions: CharacterAction[] = [
-  'idle', 'walk', 'run', 'jump', 'sit', 'stand',
-  'wave', 'talk', 'point', 'clap', 'cry', 'laugh', 'dance', 'fall',
-];
-
 const BG_ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   Village: Home,
   City: Building2,
@@ -150,23 +143,6 @@ const EXPR_ICON_MAP: Record<string, React.ComponentType<{ size?: number; classNa
   crying: Droplets,
   thinking: Brain,
   sleepy: Moon,
-};
-
-const ACTION_ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-  idle: PersonStanding,
-  walk: Footprints,
-  run: Activity,
-  jump: MoveVertical,
-  sit: Armchair,
-  stand: PersonStanding,
-  wave: Hand,
-  talk: MessageSquare,
-  point: Pointer,
-  clap: HandMetal,
-  cry: Droplets,
-  laugh: Laugh,
-  dance: Music,
-  fall: TrendingDown,
 };
 
 /** Renders a real procedural character illustration on a mini canvas (no emoji). */
@@ -246,7 +222,6 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
     selectedObjectId,
     updateCanvasObject,
     setObjectExpression,
-    setObjectAction,
     characters,
     backgrounds,
     props,
@@ -773,7 +748,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                 </>
               )}
 
-              {/* Expressions & Actions now control the SELECTED object */}
+              {/* Expressions now control the SELECTED object */}
               <div className="pt-4 border-t">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium text-gray-700">Expressions</h3>
@@ -804,40 +779,6 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                 ) : (
                   <p className="text-xs text-gray-400 mt-1">
                     Click an object on the canvas to apply expressions.
-                  </p>
-                )}
-              </div>
-
-              <div className="pt-4 border-t">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-gray-700">Actions</h3>
-                  {!selectedObject && (
-                    <span className="text-[10px] text-amber-600">select an object first</span>
-                  )}
-                </div>
-                {selectedObject ? (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {actions.map((action) => (
-                      <button
-                        key={action}
-                        onClick={() => setObjectAction(selectedObject.id, action)}
-                        className={`px-2 py-1 rounded-lg text-xs capitalize transition-colors border flex items-center gap-1 ${
-                          selectedObject.action === action
-                            ? 'bg-blue-600 text-white border-blue-700'
-                            : 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100'
-                        }`}
-                      >
-                        {(() => {
-                          const ActIcon = ACTION_ICON_MAP[action] || PersonStanding;
-                          return <ActIcon size={12} />;
-                        })()}
-                        {action}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Click an object on the canvas to apply actions.
                   </p>
                 )}
               </div>
