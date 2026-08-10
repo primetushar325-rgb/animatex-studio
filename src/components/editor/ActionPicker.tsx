@@ -12,8 +12,9 @@
 // ============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Check, Sparkles, Gauge } from 'lucide-react';
+import { Search, X, Check, Sparkles, Gauge, Repeat } from 'lucide-react';
 import { charMotionClass } from '@/lib/editor/characterLibrary15';
+import { generateActionKeyframes, presetDefaultDuration, ACTION_PRESETS, type ActionPresetId } from '@/lib/editor/actionPresets';
 import { useEditorStore } from '@/store/editor-store';
 import { drawSceneContent } from '@/lib/editor/renderer';
 import { getActionPose } from '@/lib/editor/renderer';
@@ -53,6 +54,8 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
   const [category, setCategory] = useState<(typeof ACTION_CATEGORIES)[number]['id']>('all');
   const [view, setView] = useState<AnimationView>('front');
   const [speed, setSpeed] = useState(1);
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const [loop, setLoop] = useState(true);
 
   const { canvasObjects, selectedObjectId, currentSceneId, clips, setObjectAction, setObjectExpression, setPlaybackRate, addKeyframe } = useEditorStore();
 
@@ -87,24 +90,54 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
 
   const applyAction = (clip: ActionClip) => {
     if (!selectedObject || !isCharacter) return;
-    setObjectAction(selectedObject.id, clip.action);
-    if (clip.expression) setObjectExpression(selectedObject.id, clip.expression);
-    // apply the selected view to the object so canvas renders at this angle
-    if (view !== 'front') {
-      useEditorStore.getState().updateCanvasObject(selectedObject.id, { view });
+    const st = useEditorStore.getState();
+
+    // direction: mirrored image for left-facing
+    st.updateCanvasObject(selectedObject.id, { flipX: direction === -1 });
+
+    // PNG characters (no rig): generate TRANSFORM keyframes so they actually
+    // move — walk/run travel forward with bounce+tilt, jump is parabolic.
+    if (selectedObject.imageUrl) {
+      const clipRow = clips.find(
+        (c) => c.assetId === selectedObject.assetId && c.assetId != null && c.sceneId === currentSceneId
+      );
+      if (clipRow) {
+        const clipTime = st.currentTime - clipRow.startTime;
+        const preset = mapActionToPreset(clip.action);
+        const duration = presetDefaultDuration(preset);
+        const kfs = generateActionKeyframes(preset, Math.max(0, clipTime), duration, direction, selectedObject);
+        for (const kf of kfs) {
+          st.addKeyframe(clipRow.id, kf.time, kf.properties);
+        }
+        // a hold keyframe at the end of the action segment so the character
+        // stops cleanly when playback passes it
+        st.addKeyframe(clipRow.id, Math.max(0, clipTime) + duration + 200, {
+          x: selectedObject.x + direction * ACTION_PRESETS[preset].distance,
+          y: selectedObject.y,
+          rotation: 0,
+          scaleX: selectedObject.scaleX,
+          scaleY: selectedObject.scaleY,
+          opacity: 1,
+        });
+      }
+      st.setObjectAction(selectedObject.id, 'idle'); // motion handled by keyframes
+      onClose();
+      return;
     }
-    // record a keyframe on the character's clip at the current playhead
+
+    // Procedural characters: pose-based motion (existing engine)
+    st.setObjectAction(selectedObject.id, clip.action);
+    if (clip.expression) st.setObjectExpression(selectedObject.id, clip.expression);
+    if (view !== 'front') {
+      st.updateCanvasObject(selectedObject.id, { view });
+    }
     const clipRow = clips.find(
-      (c) =>
-        c.assetId === selectedObject.assetId &&
-        c.assetId != null &&
-        c.sceneId === currentSceneId
+      (c) => c.assetId === selectedObject.assetId && c.assetId != null && c.sceneId === currentSceneId
     );
     if (clipRow) {
-      const st = useEditorStore.getState();
       const clipTime = st.currentTime - clipRow.startTime;
       if (clipTime >= 0) {
-        addKeyframe(clipRow.id, clipTime, {
+        st.addKeyframe(clipRow.id, clipTime, {
           action: clip.action,
           ...(clip.expression ? { expression: clip.expression } : {}),
         });
@@ -149,21 +182,37 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
             </span>
           </div>
 
-          {/* playback speed */}
-          <div className="flex items-center gap-1 editor-panel-2 rounded-xl px-1.5 py-1">
-            <Gauge size={13} className="text-[var(--editor-text-2)]" />
-            <select
-              value={speed}
-              onChange={(e) => changeSpeed(parseFloat(e.target.value))}
-              className="bg-transparent text-white text-[11px] focus:outline-none"
-              title="Animation speed"
+          {/* direction (flip) + loop + speed */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setDirection((d) => (d === 1 ? -1 : 1))}
+              className="w-8 h-8 rounded-lg editor-panel-2 text-[var(--editor-text-2)] hover:text-white flex items-center justify-center"
+              title={direction === 1 ? 'Facing right — tap for left' : 'Facing left — tap for right'}
             >
-              {SPEEDS.map((s) => (
-                <option key={s} value={s} className="bg-[#16161C]">
-                  {s}x
-                </option>
-              ))}
-            </select>
+              {direction === 1 ? '→' : '←'}
+            </button>
+            <button
+              onClick={() => setLoop((l) => !l)}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${loop ? 'editor-gradient text-white' : 'editor-panel-2 text-[var(--editor-text-2)]'}`}
+              title="Loop action"
+            >
+              <Repeat size={14} />
+            </button>
+            <div className="flex items-center gap-1 editor-panel-2 rounded-xl px-1.5 py-1">
+              <Gauge size={13} className="text-[var(--editor-text-2)]" />
+              <select
+                value={speed}
+                onChange={(e) => changeSpeed(parseFloat(e.target.value))}
+                className="bg-transparent text-white text-[11px] focus:outline-none"
+                title="Animation speed"
+              >
+                {SPEEDS.map((s) => (
+                  <option key={s} value={s} className="bg-[#16161C]">
+                    {s}x
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full editor-panel-2 text-[var(--editor-text-2)] hover:text-white">
@@ -259,6 +308,18 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Map a library action to a transform preset (PNG characters)
+// ---------------------------------------------------------------------------
+const PRESET_MAP: Record<string, ActionPresetId> = {
+  walk: 'walk', jog: 'walk', run: 'run', jump: 'jump',
+  idle: 'idle', 'idle-happy': 'idle', 'idle-sad': 'idle', stand: 'idle',
+  sit: 'idle', 'sit-crossed': 'idle', 'sit-idle': 'idle', sleep: 'idle',
+};
+function mapActionToPreset(action: string): ActionPresetId {
+  return PRESET_MAP[action] || 'idle';
 }
 
 // ---------------------------------------------------------------------------

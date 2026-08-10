@@ -413,3 +413,15 @@ editor's character picker and get drawn on the canvas when clicked.
 - **Layers panel**: compact overlay with per-layer visibility, lock, opacity, ↑↓ reorder, delete — always-visible, touch-friendly (24px targets).
 - **Zoom centers on the playhead** so it never drifts off-screen.
 - Easing verified end-to-end (ease-in-out vs linear differ in interpolation).
+
+---
+
+## 🆕 PNG Character Actions — Transform Movement (Phase 1, 2026-08)
+
+Uploaded PNG characters now ACTUALLY move when you pick an action:
+- **Walk**: travels forward (+120px/cycle) with bounce + rock — X is linear, never resets at cycle boundaries
+- **Run**: 2× faster, bigger stride (+180), stronger bounce/tilt
+- **Jump**: parabolic up-down with ease-in-out
+- **Idle**: breathing scale loop
+- Action tap auto-generates a transform keyframe sequence on the character's timeline clip starting at the playhead; direction toggle (→/← mirrors the image), loop toggle, speed control.
+- Presets are data-driven in `src/lib/editor/actionPresets.ts` — adding a new action = one config entry.
