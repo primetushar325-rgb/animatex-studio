@@ -89,6 +89,25 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText, onExport, onSea
   const setProp = (patch: Record<string, number | string>) => {
     if (!selectedObject) return;
     updateCanvasObject(selectedObject.id, patch);
+
+    // AUTO KEYFRAME: if enabled, property changes at currentTime create/update
+    // a keyframe so the animation interpolates between times automatically.
+    const st = useEditorStore.getState();
+    if (st.autoKeyframe && selectedObject.assetId) {
+      const clip = findClipForObject(st.clips, selectedObject, selectedObject.sceneId);
+      if (clip) {
+        const clipTime = st.currentTime - clip.startTime;
+        if (clipTime >= 0) {
+          const numeric = Object.keys(patch).filter(
+            (k) => ['x', 'y', 'scaleX', 'scaleY', 'rotation', 'opacity'].includes(k)
+          );
+          if (numeric.length > 0) {
+            const obj = st.canvasObjects.find((o) => o.id === selectedObject.id);
+            if (obj) st.addKeyframe(clip.id, clipTime, objectToKeyframeProperties(obj));
+          }
+        }
+      }
+    }
   };
 
   const applyMotion = (motion: string) => {

@@ -370,3 +370,15 @@ editor's character picker and get drawn on the canvas when clicked.
 - **ActionPicker upgraded**: category chips, search, 4 angle tabs, live looping previews at the selected angle, speed control (0.25x–2x synced to timeline), selected-state highlight, fallback "≈ label" badges.
 - **Admin**: Animations tab — edit clip speed/loop/duration/fps, toggle ON/OFF, add new actions (saved to Firestore via `/api/admin/animations`, localStorage fallback; editor merges overrides).
 - Export (GIF/WebM/PNG) renders the animated motion at the selected view automatically (verified: frames differ per frame).
+
+---
+
+## 🆕 PART 9 — Professional Pixel-Based Timeline (2026-08)
+
+- **Root-cause fix**: playback no longer rounds `currentTime`; all positioning is now pixel-based (`timeToX`/`xToTime` with `pps = 60 * zoom`) — the playhead and keyframes always represent the exact same moment. Keyframes are created from `currentTime` (or `xToTime(pointerX)` when dragged), never from DOM offsets.
+- **Full-height draggable playhead** with time flag; click/drag ruler or empty track to seek.
+- **Split at playhead** with safe rules and keyframe preservation (clip A keeps keyframes ≤ split, clip B shifts the rest); split-tool mode to tap a clip.
+- **Draggable keyframes** (exact time updates), snapping (frame/playhead/clip-edge), easing per keyframe, auto-keyframe toggle.
+- **Adaptive ruler** (1s → 0.5s → 0.1s by zoom), zoom in/out/fit preserving currentTime, auto-scroll during playback.
+- **Frame stepping (±1/fps), FPS config (24–60), playback speed 0.25–2x, loop In/Out region, markers, professional toolbar, undo/redo everywhere.**
+- Verified: pixel roundtrip, split keyframe preservation (1/3/5 → A:1,3 / B:1.5), exact placement — all automated tests pass.

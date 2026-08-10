@@ -93,6 +93,23 @@ interface EditorState {
   seek: (time: number) => void;
   setZoom: (zoom: number) => void;
   setPlaybackRate: (rate: number) => void;
+  /** Timeline engine extras */
+  fps: number;
+  setFps: (fps: number) => void;
+  loopEnabled: boolean;
+  loopStart: number;
+  loopEnd: number;
+  setLoopRegion: (start: number | null, end: number | null) => void;
+  snapEnabled: boolean;
+  setSnapEnabled: (v: boolean) => void;
+  autoKeyframe: boolean;
+  setAutoKeyframe: (v: boolean) => void;
+  markers: { id: string; time: number; label: string }[];
+  addMarker: (time: number, label?: string) => void;
+  deleteMarker: (id: string) => void;
+  renameMarker: (id: string, label: string) => void;
+  moveKeyframe: (clipId: string, keyframeId: string, newTime: number) => void;
+  setKeyframeEasing: (clipId: string, keyframeId: string, easing: Keyframe['easing']) => void;
   
   // Actions - Tracks
   addTrack: (type: TimelineTrack['type'], name: string) => void;
@@ -106,7 +123,8 @@ interface EditorState {
   addClip: (trackId: string, assetId: string, startTime: number, duration: number) => void;
   deleteClip: (clipId: string) => void;
   moveClip: (clipId: string, newStartTime: number) => void;
-  trimClip: (clipId: string, trimStart: number, trimEnd: number) => void;
+  trimClip: (clipId: string, newStart: number, newDuration: number) => void;
+  setClipDuration: (clipId: string, newDuration: number) => void;
   splitClip: (clipId: string, splitTime: number) => void;
   duplicateClip: (clipId: string) => void;
   
@@ -211,6 +229,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isPlaying: false,
   playbackRate: 1,
   zoom: 1,
+  fps: 30,
+  loopEnabled: false,
+  loopStart: 0,
+  loopEnd: 0,
+  snapEnabled: true,
+  autoKeyframe: false,
+  markers: [],
   canvasObjects: [],
   selectedObjectId: null,
   selectedObjectIds: [],
@@ -351,6 +376,66 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setPlaybackRate: (rate: number) =>
     set({ playbackRate: Math.max(0.25, Math.min(4, rate)) }),
 
+  setFps: (fps: number) => set({ fps: Math.max(1, Math.min(120, Math.round(fps))) }),
+
+  setLoopRegion: (start: number | null, end: number | null) => {
+    const cur = get();
+    const loopStart = start ?? cur.loopStart;
+    const loopEnd = end ?? cur.loopEnd;
+    set({ loopStart, loopEnd, loopEnabled: start !== null || end !== null });
+  },
+
+  setSnapEnabled: (v: boolean) => set({ snapEnabled: v }),
+  setAutoKeyframe: (v: boolean) => set({ autoKeyframe: v }),
+
+  addMarker: (time: number, label = 'Marker') => {
+    const m = { id: uuidv4(), time, label };
+    set((st) => ({ markers: [...st.markers, m].sort((a, b) => a.time - b.time) }));
+  },
+  deleteMarker: (id: string) => {
+    set((st) => ({ markers: st.markers.filter((m) => m.id !== id) }));
+  },
+  renameMarker: (id: string, label: string) => {
+    set((st) => ({ markers: st.markers.map((m) => (m.id === id ? { ...m, label } : m)) }));
+  },
+
+  moveKeyframe: (clipId: string, keyframeId: string, newTime: number) => {
+    set((st) => ({
+      clips: st.clips.map((c) =>
+        c.id !== clipId
+          ? c
+          : {
+              ...c,
+              keyframes: c.keyframes
+                .map((k) => (k.id === keyframeId ? { ...k, time: Math.max(0, newTime) } : k))
+                .sort((a, b) => a.time - b.time),
+            }
+      ),
+    }));
+  },
+
+  setKeyframeEasing: (clipId: string, keyframeId: string, easing: Keyframe['easing']) => {
+    set((st) => ({
+      clips: st.clips.map((c) =>
+        c.id !== clipId
+          ? c
+          : {
+              ...c,
+              keyframes: c.keyframes.map((k) => (k.id === keyframeId ? { ...k, easing } : k)),
+            }
+      ),
+    }));
+  },
+
+  setClipDuration: (clipId: string, newDuration: number) => {
+    const safe = Math.max(200, newDuration);
+    set((st) => ({
+      clips: st.clips.map((c) =>
+        c.id === clipId ? { ...c, duration: safe, endTime: c.startTime + safe } : c
+      ),
+    }));
+  },
+
   // Track Actions
   addTrack: (type: TimelineTrack['type'], name: string) => {
     const { currentSceneId, tracks } = get();
@@ -477,24 +562,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const { clips } = get();
     const clip = clips.find((c) => c.id === clipId);
     if (!clip || splitTime <= clip.startTime || splitTime >= clip.endTime) return;
-    
+
     const firstDuration = splitTime - clip.startTime;
     const secondDuration = clip.endTime - splitTime;
-    
+
+    // Keyframes stay logically correct: clip A keeps keyframes <= split,
+    // clip B keeps the rest with local times shifted by firstDuration.
+    const aKfs = clip.keyframes.filter((k) => k.time <= firstDuration);
+    const bKfs = clip.keyframes
+      .filter((k) => k.time > firstDuration)
+      .map((k) => ({ ...k, time: k.time - firstDuration }));
+
     const firstClip: TimelineClip = {
       ...clip,
       endTime: splitTime,
       duration: firstDuration,
+      keyframes: aKfs,
     };
-    
+
     const secondClip: TimelineClip = {
       ...clip,
       id: uuidv4(),
       startTime: splitTime,
       duration: secondDuration,
-      keyframes: [],
+      keyframes: bKfs,
     };
-    
+
     set((state) => ({
       clips: [
         ...state.clips.filter((c) => c.id !== clipId),
@@ -921,6 +1014,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isPlaying: false,
       playbackRate: 1,
       zoom: 1,
+      fps: 30,
+      loopEnabled: false,
+      loopStart: 0,
+      loopEnd: 0,
+      snapEnabled: true,
+      autoKeyframe: false,
+      markers: [],
       canvasObjects: [],
       selectedObjectId: null,
       selectedObjectIds: [],
