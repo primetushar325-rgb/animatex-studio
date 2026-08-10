@@ -402,3 +402,14 @@ editor's character picker and get drawn on the canvas when clicked.
 - **Keyboard shortcuts**: S = split at playhead, Ctrl+C/V = copy/paste clip at playhead (plus Z/D/Delete/Space).
 - **Mobile pinch zoom** on the timeline (playhead-centered), compact sticky layer headers.
 - Everything from Parts 8–10 preserved: pixel-based timeline, single currentTime clock, exact keyframes/split/spawn, full-height playhead, 15-character official library with 5 views, 57+ action engine with live previews, export with identical timing.
+
+---
+
+## 🆕 Timeline + Layers rebuild (2026-08)
+
+- **Locked tracks are now fully read-only** (no clip move/trim/keyframe-drag on locked layers).
+- **Clip multi-select** (Shift/Ctrl+click) with group move and group delete.
+- **Canvas drag → auto-keyframe**: moving/resizing/rotating an object on the canvas writes a keyframe at the playhead (when auto-keyframe is on or the object is already keyframed) — canvas and timeline stay in sync.
+- **Layers panel**: compact overlay with per-layer visibility, lock, opacity, ↑↓ reorder, delete — always-visible, touch-friendly (24px targets).
+- **Zoom centers on the playhead** so it never drifts off-screen.
+- Easing verified end-to-end (ease-in-out vs linear differ in interpolation).

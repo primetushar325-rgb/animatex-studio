@@ -11,7 +11,7 @@ import {
   mixColors,
   transitionProgress,
 } from '@/lib/editor/renderer';
-import { applyKeyframes } from '@/lib/editor/keyframes';
+import { applyKeyframes, objectToKeyframeProperties, findClipForObject } from '@/lib/editor/keyframes';
 import { PoseAnimator } from '@/lib/editor/animations';
 import type { CharacterPose } from '@/lib/editor/renderer';
 import type { CanvasObject } from '@/types/animation';
@@ -592,10 +592,30 @@ export function Canvas({ onDoubleClickObject, onTapCharacter }: CanvasProps) {
   };
 
   const endDrag = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const dragged = !!dragRef.current;
     if (dragRef.current && dragRef.current.pointerId === e.pointerId) {
       dragRef.current = null;
       setDragging(false);
       commitTransform();
+      // CANVAS → KEYFRAME SYNC: after a real drag, write the object's new
+      // transform as a keyframe at the playhead (updates an existing keyframe
+      // at the same time). Only when autoKeyframe is ON or the object already
+      // has keyframes — so plain placement doesn't spam keyframes.
+      if (dragged && selectedObjectId) {
+        const st = useEditorStore.getState();
+        const obj = st.canvasObjects.find((o) => o.id === selectedObjectId);
+        const autoKf = st.autoKeyframe;
+        if (obj?.assetId) {
+          const clip = findClipForObject(st.clips, obj, st.currentSceneId ?? undefined);
+          const hasKf = clip && clip.keyframes.length > 0;
+          if (clip && (autoKf || hasKf)) {
+            const clipTime = st.currentTime - clip.startTime;
+            if (clipTime >= 0) {
+              st.addKeyframe(clip.id, clipTime, objectToKeyframeProperties(obj));
+            }
+          }
+        }
+      }
     }
 
     // TAP detection: pointer went down & up with almost no movement and no

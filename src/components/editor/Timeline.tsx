@@ -25,7 +25,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Minimize, Lock, Unlock, Eye,
   User, Image as ImageIcon, Box, Type, Mic, Music, Volume2,
   ChevronDown, ChevronUp, Magnet, Repeat, KeyRound, Flag, Frame,
-  Trash2, GripHorizontal, RefreshCw,
+  Trash2, GripHorizontal, RefreshCw, Layers,
 } from 'lucide-react';
 import { useEditorStore } from '@/store/editor-store';
 import { objectToKeyframeProperties, findClipForObject } from '@/lib/editor/keyframes';
@@ -92,7 +92,9 @@ export function Timeline() {
   const [fullscreen, setFullscreen] = useState(false);
   const [menuSceneId, setMenuSceneId] = useState<string | null>(null);
   const [splitTool, setSplitTool] = useState(false);
+  const [showLayers, setShowLayers] = useState(false);
   const [selectedKfId, setSelectedKfId] = useState<string | null>(null);
+  const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [markerMenuId, setMarkerMenuId] = useState<string | null>(null);
 
   const {
@@ -106,7 +108,7 @@ export function Timeline() {
     snapEnabled, setSnapEnabled, autoKeyframe, setAutoKeyframe,
     rippleEnabled, setRippleEnabled,
     markers, addMarker, deleteMarker, renameMarker, updateKeyframe,
-    reorderTracks, deleteTrack,
+    reorderTracks, deleteTrack, toggleTrackVisibility, updateCanvasObject,
   } = useEditorStore();
 
   const currentScene = scenes.find((s) => s.id === currentSceneId);
@@ -282,6 +284,14 @@ export function Timeline() {
   // -------------------------------------------------------------------------
   const handleClipDown = (e: React.PointerEvent, clip: TimelineClip, mode: ClipDragMode) => {
     e.stopPropagation();
+    // LOCKED TRACKS ARE READ-ONLY: no move, no trim, no keyframe drag
+    const track = tracks.find((t) => t.id === clip.trackId);
+    if (track?.locked) {
+      // still allow selection
+      const linked = canvasObjects.find((o) => o.assetId === clip.assetId);
+      selectObject(linked?.id || null);
+      return;
+    }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     clipDragRef.current = { mode, clipId: clip.id, startClientX: e.clientX, origStart: clip.startTime, origDur: clip.duration };
   };
@@ -296,8 +306,16 @@ export function Timeline() {
     const t = xToTime(x);
 
     if (drag.mode === 'move') {
-      const target = applySnap(drag.origStart + (t - xToTime(drag.startClientX - rect.left + scroll.scrollLeft)), snapEdges);
-      moveClip(drag.clipId, Math.max(0, Math.min(sceneDuration - drag.origDur, target)));
+      const rawTarget = applySnap(drag.origStart + (t - xToTime(drag.startClientX - rect.left + scroll.scrollLeft)), snapEdges);
+      const target = Math.max(0, Math.min(sceneDuration - drag.origDur, rawTarget));
+      const delta = target - drag.origStart;
+      // if the dragged clip is part of a group, move every selected clip together
+      const group = selectedClipIds.includes(drag.clipId) ? selectedClipIds : [drag.clipId];
+      for (const id of group) {
+        const c = clips.find((x) => x.id === id);
+        if (!c) continue;
+        moveClip(id, Math.max(0, Math.min(sceneDuration - c.duration, c.startTime + delta)));
+      }
     } else if (drag.mode === 'trim-l') {
       const target = applySnap(drag.origStart + (t - xToTime(drag.startClientX - rect.left + scroll.scrollLeft)), snapEdges);
       const newStart = Math.max(0, Math.min(drag.origStart + drag.origDur - 200, target));
@@ -485,7 +503,19 @@ export function Timeline() {
         <button onClick={() => selectedClipId && duplicateClip(selectedClipId)} className={iconBtn()} title="Duplicate clip" disabled={!selectedClipId}>
           <Copy size={14} />
         </button>
-        <button onClick={() => selectedClipId && deleteClip(selectedClipId)} className={iconBtn()} title="Delete clip" disabled={!selectedClipId}>
+        <button
+          onClick={() => {
+            if (selectedClipIds.length > 1) {
+              for (const id of selectedClipIds) deleteClip(id);
+              setSelectedClipIds([]);
+            } else if (selectedClipId) {
+              deleteClip(selectedClipId);
+            }
+          }}
+          className={iconBtn()}
+          title={selectedClipIds.length > 1 ? `Delete ${selectedClipIds.length} clips` : 'Delete clip'}
+          disabled={selectedClipIds.length <= 1 && !selectedClipId}
+        >
           <Trash2 size={14} />
         </button>
         <button onClick={handleAddKeyframe} className={iconBtn()} title="Add keyframe at playhead" disabled={!selectedObjectId}>
@@ -523,11 +553,30 @@ export function Timeline() {
         </button>
         <div className="w-px h-5 bg-[var(--editor-border)]" />
         {/* Zoom */}
-        <button onClick={() => setZoom(Math.max(0.5, zoom - 0.5))} className={iconBtn()} title="Zoom out"><ZoomOut size={14} /></button>
+        <button
+          onClick={() => {
+            const before = timeToX(currentTime);
+            setZoom(Math.max(0.5, zoom - 0.5));
+            const after = timeToX(currentTime);
+            if (scrollRef.current) scrollRef.current.scrollLeft += after - before;
+          }}
+          className={iconBtn()} title="Zoom out"
+        ><ZoomOut size={14} /></button>
         <span className="text-[10px] text-[var(--editor-text-2)] w-10 text-center">{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(Math.min(5, zoom + 0.5))} className={iconBtn()} title="Zoom in"><ZoomIn size={14} /></button>
+        <button
+          onClick={() => {
+            const before = timeToX(currentTime);
+            setZoom(Math.min(5, zoom + 0.5));
+            const after = timeToX(currentTime);
+            if (scrollRef.current) scrollRef.current.scrollLeft += after - before;
+          }}
+          className={iconBtn()} title="Zoom in"
+        ><ZoomIn size={14} /></button>
         <button onClick={fitTimeline} className={iconBtn()} title="Fit timeline"><RefreshCw size={14} /></button>
         <button onClick={toggleFullscreen} className={iconBtn()} title="Fullscreen">{fullscreen ? <Minimize size={14} /> : <Maximize size={14} />}</button>
+        <button onClick={() => setShowLayers((v) => !v)} className={iconBtn(showLayers)} title="Layers panel">
+          <Layers size={14} />
+        </button>
         <div className="flex-1" />
         {/* FPS */}
         <select value={fps} onChange={(e) => setFps(parseInt(e.target.value, 10))} className="editor-input px-1.5 py-1 text-[10px]" title="Project FPS">
@@ -595,22 +644,22 @@ export function Timeline() {
             return (
               <div key={track.id} className="flex border-b border-[var(--editor-border)]">
                 {/* label */}
-                <div className="w-24 flex-shrink-0 editor-panel px-1 py-0.5 flex items-center gap-0.5 border-r border-[var(--editor-border)] sticky left-0 z-10 group">
+                <div className="w-32 flex-shrink-0 editor-panel px-1 py-0.5 flex items-center gap-1 border-r border-[var(--editor-border)] sticky left-0 z-10">
                   <span className="text-white text-[9px] truncate flex-1">{track.name}</span>
-                  {/* compact reorder controls (hover) */}
-                  <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => reorderTracks(track.order, Math.max(0, track.order - 1))} className="w-3.5 h-3 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white" title="Move layer up">
-                      <ChevronUp size={9} />
+                  {/* layer controls — always visible, touch-friendly (≥24px) */}
+                  <div className="flex flex-col">
+                    <button onClick={() => reorderTracks(track.order, Math.max(0, track.order - 1))} className="w-6 h-3.5 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white" title="Move layer up" style={{width:24,height:14}}>
+                      <ChevronUp size={10} />
                     </button>
-                    <button onClick={() => reorderTracks(track.order, Math.min(sceneTracks.length - 1, track.order + 1))} className="w-3.5 h-3 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white" title="Move layer down">
-                      <ChevronDown size={9} />
+                    <button onClick={() => reorderTracks(track.order, Math.min(sceneTracks.length - 1, track.order + 1))} className="w-6 h-3.5 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white" title="Move layer down" style={{width:24,height:14}}>
+                      <ChevronDown size={10} />
                     </button>
                   </div>
-                  <button onClick={() => toggleTrackLock(track.id)} className={`w-4.5 h-4.5 rounded flex items-center justify-center ${track.locked ? 'bg-[var(--editor-accent-2)] text-white' : 'bg-[var(--editor-panel-3)] text-[var(--editor-text-2)]'}`} title={track.locked ? 'Unlock' : 'Lock'} style={{width:18,height:18}}>
-                    {track.locked ? <Lock size={9} /> : <Unlock size={9} />}
+                  <button onClick={() => toggleTrackLock(track.id)} className={`rounded flex items-center justify-center ${track.locked ? 'bg-[var(--editor-accent-2)] text-white' : 'bg-[var(--editor-panel-3)] text-[var(--editor-text-2)]'}`} title={track.locked ? 'Unlock' : 'Lock'} style={{width:24,height:24}}>
+                    {track.locked ? <Lock size={12} /> : <Unlock size={12} />}
                   </button>
-                  <button onClick={() => deleteTrack(track.id)} className="w-4 h-4 rounded flex items-center justify-center text-[var(--editor-text-2)] hover:text-red-400" title="Delete layer" style={{width:16,height:16}}>
-                    <Trash2 size={9} />
+                  <button onClick={() => deleteTrack(track.id)} className="rounded flex items-center justify-center text-[var(--editor-text-2)] hover:text-red-400" title="Delete layer" style={{width:24,height:24}}>
+                    <Trash2 size={12} />
                   </button>
                 </div>
 
@@ -649,6 +698,20 @@ export function Timeline() {
                         key={clip.id}
                         onPointerDown={(e) => {
                           e.stopPropagation();
+                          // MULTI-SELECT: Shift/Ctrl+click toggles clip selection
+                          if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                            e.preventDefault();
+                            setSelectedClipIds((prev) =>
+                              prev.includes(clip.id)
+                                ? prev.filter((id) => id !== clip.id)
+                                : [...prev, clip.id]
+                            );
+                            return;
+                          }
+                          if (selectedClipIds.length > 1) {
+                            // single click clears group
+                            setSelectedClipIds([clip.id]);
+                          }
                           selectObject(linked?.id || null);
                           if (splitTool) { handleSplit(clip.id, xToTime(e.clientX - (contentRef.current?.getBoundingClientRect().left || 0) + (scrollRef.current?.scrollLeft || 0))); setSplitTool(false); return; }
                           handleClipDown(e, clip, 'move');
@@ -656,7 +719,7 @@ export function Timeline() {
                         onPointerMove={(e) => { handleClipMove(e); handleKfMove(e, clip); }}
                         onPointerUp={handleClipUp}
                         onPointerCancel={handleClipUp}
-                        className={`absolute top-1 bottom-1 rounded-md cursor-grab active:cursor-grabbing select-none touch-none group bg-gradient-to-b ${clipColor} ${isSelected ? 'ring-2 ring-white' : ''} ${track.locked ? 'opacity-60' : ''}`}
+                        className={`absolute top-1 bottom-1 rounded-md cursor-grab active:cursor-grabbing select-none touch-none group bg-gradient-to-b ${clipColor} ${isSelected || selectedClipIds.includes(clip.id) ? 'ring-2 ring-white' : ''} ${track.locked ? 'opacity-60' : ''}`}
                         style={{ left, width, minWidth: 44 }}
                         title={`${linked?.name || clip.assetId.slice(0, 8)} · ${(clip.startTime / 1000).toFixed(2)}s → ${(clip.endTime / 1000).toFixed(2)}s`}
                       >
@@ -759,6 +822,68 @@ export function Timeline() {
           <span>{selectedObjectIds.length > 0 ? `${selectedObjectIds.length} selected` : ''}</span>
         </div>
       </div>
+
+      {/* LAYERS PANEL — compact layer list with visibility/lock/opacity/reorder */}
+      {showLayers && (
+        <div className="border-t border-[var(--editor-border)] bg-[var(--editor-panel)]">
+          <div className="flex items-center justify-between px-3 py-1.5">
+            <span className="text-[11px] font-semibold text-white flex items-center gap-1.5">
+              <Layers size={12} className="text-[var(--editor-accent)]" /> Layers ({sceneTracks.length})
+            </span>
+            <button onClick={() => setShowLayers(false)} className="text-[var(--editor-text-2)] hover:text-white text-[10px]">✕</button>
+          </div>
+          <div className="px-2 pb-2 max-h-40 overflow-y-auto editor-scroll space-y-1">
+            {sceneTracks.map((track, i) => {
+              const linkedObj = canvasObjects.find((o) =>
+                o.assetId && clips.some((c) => c.trackId === track.id && c.assetId === o.assetId)
+              );
+              return (
+                <div key={track.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[var(--editor-panel-2)]">
+                  <button
+                    onClick={() => reorderTracks(track.order, Math.max(0, track.order - 1))}
+                    disabled={i === 0}
+                    className="w-6 h-6 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white disabled:opacity-30"
+                    title="Move up"
+                  >
+                    <ChevronUp size={13} />
+                  </button>
+                  <button
+                    onClick={() => reorderTracks(track.order, Math.min(sceneTracks.length - 1, track.order + 1))}
+                    disabled={i === sceneTracks.length - 1}
+                    className="w-6 h-6 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white disabled:opacity-30"
+                    title="Move down"
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                  <span className="text-white text-[11px] truncate flex-1">{track.name}</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={linkedObj?.opacity ?? 1}
+                    onChange={(e) => linkedObj && updateCanvasObject(linkedObj.id, { opacity: parseFloat(e.target.value) })}
+                    className="w-16 accent-[var(--editor-accent)]"
+                    title="Layer opacity (first object)"
+                  />
+                  <button onClick={() => toggleTrackVisibility(track.id)} className={`w-7 h-7 rounded flex items-center justify-center ${track.visible ? 'text-green-400' : 'text-[var(--editor-text-2)] opacity-50'}`} title={track.visible ? 'Hide layer' : 'Show layer'}>
+                    <Eye size={14} />
+                  </button>
+                  <button onClick={() => toggleTrackLock(track.id)} className={`w-7 h-7 rounded flex items-center justify-center ${track.locked ? 'bg-[var(--editor-accent-2)] text-white' : 'text-[var(--editor-text-2)]'}`} title={track.locked ? 'Unlock' : 'Lock'}>
+                    {track.locked ? <Lock size={13} /> : <Unlock size={13} />}
+                  </button>
+                  <button onClick={() => deleteTrack(track.id)} className="w-7 h-7 rounded flex items-center justify-center text-[var(--editor-text-2)] hover:text-red-400" title="Delete layer">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              );
+            })}
+            {sceneTracks.length === 0 && (
+              <p className="text-[10px] text-[var(--editor-text-2)] text-center py-3">No layers yet</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Collapse toggle */}
       <button onClick={() => setCollapsed((c) => !c)} className="flex items-center justify-center w-full py-0.5 text-[var(--editor-text-2)] hover:text-white">
