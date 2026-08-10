@@ -207,6 +207,37 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
         const { selectedObjectId, duplicateCanvasObject } = useEditorStore.getState();
         if (selectedObjectId) duplicateCanvasObject(selectedObjectId);
       }
+      // S = Split at playhead (selected clip)
+      if (e.key.toLowerCase() === 's' && !typing && !(e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const st = useEditorStore.getState();
+        const obj = st.canvasObjects.find((o) => o.id === st.selectedObjectId);
+        if (obj?.assetId) {
+          const clip = st.clips.find((c) => c.assetId === obj.assetId && c.sceneId === st.currentSceneId);
+          if (clip) {
+            const t = st.currentTime;
+            if (t > clip.startTime && t < clip.endTime) st.splitClip(clip.id, t);
+          }
+        }
+      }
+      // C = Copy clip
+      if (e.key.toLowerCase() === 'c' && (e.ctrlKey || e.metaKey) && !typing) {
+        const st = useEditorStore.getState();
+        const obj = st.canvasObjects.find((o) => o.id === st.selectedObjectId);
+        if (obj?.assetId) {
+          const clip = st.clips.find((c) => c.assetId === obj.assetId && c.sceneId === st.currentSceneId);
+          if (clip) { e.preventDefault(); st.copyClip(clip.id); }
+        }
+      }
+      // V = Paste clip at playhead
+      if (e.key.toLowerCase() === 'v' && (e.ctrlKey || e.metaKey) && !typing) {
+        const st = useEditorStore.getState();
+        const obj = st.canvasObjects.find((o) => o.id === st.selectedObjectId);
+        const track = obj?.assetId
+          ? st.tracks.find((t) => t.sceneId === st.currentSceneId && t.type === obj.type)
+          : undefined;
+        if (track) { e.preventDefault(); st.pasteClip(track.id, st.currentTime); }
+      }
       if (e.key === ' ' && !typing) {
         e.preventDefault();
         useEditorStore.getState().togglePlay();

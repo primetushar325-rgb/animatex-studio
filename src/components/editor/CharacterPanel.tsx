@@ -49,7 +49,7 @@ export function CharacterPanel({ isOpen, onClose, onCreate }: CharacterPanelProp
   const recent = useRecent();
   const favorites = useFavorites();
 
-  const { addCanvasObject, addClip, tracks, currentSceneId } = useEditorStore();
+  const { addCanvasObject, addClip, addTrack, tracks, currentSceneId } = useEditorStore();
   const { currentProject } = useProjectStore();
   const { user } = useAuthStore();
 
@@ -80,9 +80,11 @@ export function CharacterPanel({ isOpen, onClose, onCreate }: CharacterPanelProp
     }
   }, [isOpen]);
 
-  const addCharacterToCanvas = (name: string, imageUrl?: string) => {
-    const track = tracks.find((t) => t.sceneId === currentSceneId && t.type === 'character');
+  const addCharacterToCanvas = (name: string, imageUrl?: string, dropTime?: number) => {
+    // per-character layer row (professional stacked layers)
+    const track = addTrack('character', name);
     if (!track) return;
+    void imageUrl;
 
     const assetId =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -111,7 +113,8 @@ export function CharacterPanel({ isOpen, onClose, onCreate }: CharacterPanelProp
       expression: 'neutral',
       action: 'idle',
     });
-    addClip(track.id, assetId, useEditorStore.getState().currentTime || 0, 3000);
+    const start = dropTime !== undefined ? dropTime : (useEditorStore.getState().currentTime || 0);
+    addClip(track.id, assetId, start, 3000);
     recordRecent({ kind: 'character', id: assetId, name, url: imageUrl } as AssetRef);
     onClose();
   };
@@ -302,6 +305,7 @@ interface CharacterCardProps {
 }
 
 function CharacterCard({ name, imageUrl, placeholder, pose, onPose, onAdd }: CharacterCardProps) {
+  const [dragState, setDragState] = useState<'idle' | 'dragging'>('idle');
   const [fav, setFav] = useState(() => (placeholder ? false : isFavorite({ kind: 'character', id: name + (imageUrl || ''), name })));
   const toggle = () => {
     if (placeholder) return;
@@ -316,7 +320,17 @@ function CharacterCard({ name, imageUrl, placeholder, pose, onPose, onAdd }: Cha
       }`}
     >
       {/* Thumbnail */}
-      <button onClick={onAdd} className="w-full aspect-[3/4] relative block">
+      <button
+        onClick={onAdd}
+        draggable={!placeholder}
+        onDragStart={(e) => {
+          setDragState('dragging');
+          e.dataTransfer.setData('text/animatex-character', JSON.stringify({ name }));
+          e.dataTransfer.effectAllowed = 'copy';
+        }}
+        onDragEnd={() => setDragState('idle')}
+        className={`w-full aspect-[3/4] relative block ${dragState === 'dragging' ? 'opacity-40 ring-2 ring-[var(--editor-accent)]' : ''}`}
+      >
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={imageUrl} alt={name} className="w-full h-full object-contain p-2" loading="lazy" />

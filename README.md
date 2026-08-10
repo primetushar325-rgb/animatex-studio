@@ -391,3 +391,14 @@ editor's character picker and get drawn on the canvas when clicked.
 - **5 views per character**: FRONT / 3/4 FRONT / SIDE / 3/4 BACK / BACK (side = profile face, back = back-of-head; identity consistent). Verified: 15 chars × 5 views render.
 - **CRITICAL FIX — playhead = edit position**: every new element (character/text/prop/audio) now starts its timeline clip EXACTLY at `currentTime` (was hardcoded 0). Keyframes/split already exact (Part 9). Full scenario test passes: add@1.63 → clip 1.63; kf@3.00 → 1370 local; split@2.00 → exact.
 - **Properties panel**: clip Start/End/Duration editable, per-object animation speed (0.25–2x), copy/paste clip at playhead.
+
+---
+
+## 🆕 V2 FINAL — Professional Editor completion (2026-08)
+
+- **Per-character layer rows**: each character added gets its OWN timeline row (Village Man / Child Boy / …) — professional stacked layers, reorderable (↑↓ hover controls), deletable, lockable.
+- **Ripple editing**: RPL toggle — delete shifts later clips left automatically (verified).
+- **Drag-to-timeline**: drag any character card (Character panel or Assets) onto a timeline row — the clip starts at the EXACT drop time (xToTime).
+- **Keyboard shortcuts**: S = split at playhead, Ctrl+C/V = copy/paste clip at playhead (plus Z/D/Delete/Space).
+- **Mobile pinch zoom** on the timeline (playhead-centered), compact sticky layer headers.
+- Everything from Parts 8–10 preserved: pixel-based timeline, single currentTime clock, exact keyframes/split/spawn, full-height playhead, 15-character official library with 5 views, 57+ action engine with live previews, export with identical timing.

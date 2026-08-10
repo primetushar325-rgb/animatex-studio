@@ -100,6 +100,8 @@ interface EditorState {
   loopStart: number;
   loopEnd: number;
   setLoopRegion: (start: number | null, end: number | null) => void;
+  rippleEnabled: boolean;
+  setRippleEnabled: (v: boolean) => void;
   snapEnabled: boolean;
   setSnapEnabled: (v: boolean) => void;
   autoKeyframe: boolean;
@@ -112,7 +114,7 @@ interface EditorState {
   setKeyframeEasing: (clipId: string, keyframeId: string, easing: Keyframe['easing']) => void;
   
   // Actions - Tracks
-  addTrack: (type: TimelineTrack['type'], name: string) => void;
+  addTrack: (type: TimelineTrack['type'], name: string) => TimelineTrack | null;
   deleteTrack: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
   toggleTrackVisibility: (trackId: string) => void;
@@ -246,6 +248,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   loopEnd: 0,
   snapEnabled: true,
   autoKeyframe: false,
+  rippleEnabled: false,
   markers: [],
   canvasObjects: [],
   selectedObjectId: null,
@@ -398,6 +401,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setSnapEnabled: (v: boolean) => set({ snapEnabled: v }),
   setAutoKeyframe: (v: boolean) => set({ autoKeyframe: v }),
+  setRippleEnabled: (v: boolean) => set({ rippleEnabled: v }),
 
   addMarker: (time: number, label = 'Marker') => {
     const m = { id: uuidv4(), time, label };
@@ -470,8 +474,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   // Track Actions
   addTrack: (type: TimelineTrack['type'], name: string) => {
     const { currentSceneId, tracks } = get();
-    if (!currentSceneId) return;
-    
+    if (!currentSceneId) return null;
+
     const sceneTracks = tracks.filter((t) => t.sceneId === currentSceneId);
     const newTrack: TimelineTrack = {
       id: uuidv4(),
@@ -483,9 +487,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       locked: false,
       visible: true,
     };
-    
+
     set((state) => ({ tracks: [...state.tracks, newTrack] }));
     get().saveSnapshot();
+    return newTrack;
   },
 
   deleteTrack: (trackId: string) => {
@@ -557,9 +562,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   deleteClip: (clipId: string) => {
-    set((state) => ({
-      clips: state.clips.filter((c) => c.id !== clipId),
-    }));
+    const { clips, rippleEnabled } = get();
+    const target = clips.find((c) => c.id === clipId);
+    if (!target) return;
+
+    if (rippleEnabled) {
+      // RIPPLE: shift later clips (same scene, all tracks) left by the deleted duration
+      const dur = target.duration;
+      set((state) => ({
+        clips: state.clips
+          .filter((c) => c.id !== clipId)
+          .map((c) =>
+            c.sceneId === target.sceneId && c.startTime >= target.endTime
+              ? { ...c, startTime: c.startTime - dur, endTime: c.endTime - dur }
+              : c
+          ),
+      }));
+    } else {
+      set((state) => ({
+        clips: state.clips.filter((c) => c.id !== clipId),
+      }));
+    }
     get().saveSnapshot();
   },
 
@@ -1051,6 +1074,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       loopEnd: 0,
       snapEnabled: true,
       autoKeyframe: false,
+      rippleEnabled: false,
       markers: [],
       canvasObjects: [],
       selectedObjectId: null,

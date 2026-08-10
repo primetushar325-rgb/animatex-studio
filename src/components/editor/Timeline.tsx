@@ -24,7 +24,7 @@ import {
   Plus, MoreVertical, Copy, Scissors, Diamond, Undo2, Redo2,
   ZoomIn, ZoomOut, Maximize, Minimize, Lock, Unlock, Eye,
   User, Image as ImageIcon, Box, Type, Mic, Music, Volume2,
-  ChevronDown, Magnet, Repeat, KeyRound, Flag, Frame,
+  ChevronDown, ChevronUp, Magnet, Repeat, KeyRound, Flag, Frame,
   Trash2, GripHorizontal, RefreshCw,
 } from 'lucide-react';
 import { useEditorStore } from '@/store/editor-store';
@@ -47,6 +47,30 @@ const TRACK_ICON: Record<string, React.ReactNode> = {
   sfx: <Volume2 size={12} />,
 };
 
+// module-level: impure spawn logic kept OUT of the component body
+function dropCharacterOntoTrack(e: React.DragEvent, atTime: number) {
+  e.preventDefault();
+  const raw = e.dataTransfer.getData('text/animatex-character');
+  if (!raw) return;
+  try {
+    const { name, type } = JSON.parse(raw) as { name?: string; type?: string };
+    const charName = name || 'Character';
+    const st = useEditorStore.getState();
+    const track = st.addTrack('character', charName);
+    if (!track) return;
+    const assetId = 'ch-drop-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    st.addCanvasObject({
+      type: 'character',
+      x: 400, y: 200, width: 220, height: 320,
+      rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, zIndex: 10,
+      assetId, name: charName,
+      characterType: (type as never) || 'custom',
+      expression: 'neutral', action: 'idle',
+    });
+    st.addClip(track.id, assetId, Math.max(0, atTime), 3000);
+  } catch { /* ignore */ }
+}
+
 const CLIP_COLOR: Record<string, string> = {
   character: 'from-pink-500 to-pink-600',
   background: 'from-green-500 to-green-600',
@@ -62,6 +86,7 @@ export function Timeline() {
   const contentRef = useRef<HTMLDivElement>(null);
   const clipDragRef = useRef<{ mode: ClipDragMode; clipId: string; startClientX: number; origStart: number; origDur: number } | null>(null);
   const kfDragRef = useRef<{ clipId: string; kfId: string; startClientX: number; origTime: number } | null>(null);
+  const pinchRef = useRef<{ startDist: number; startZoom: number } | null>(null);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -79,7 +104,9 @@ export function Timeline() {
     duplicateClip, undo, redo, history, moveKeyframe, setKeyframeEasing,
     fps, setFps, loopEnabled, loopStart, loopEnd, setLoopRegion,
     snapEnabled, setSnapEnabled, autoKeyframe, setAutoKeyframe,
+    rippleEnabled, setRippleEnabled,
     markers, addMarker, deleteMarker, renameMarker, updateKeyframe,
+    reorderTracks, deleteTrack,
   } = useEditorStore();
 
   const currentScene = scenes.find((s) => s.id === currentSceneId);
@@ -472,6 +499,10 @@ export function Timeline() {
         <button onClick={() => setSnapEnabled(!snapEnabled)} className={iconBtn(snapEnabled)} title="Snap on/off">
           <Magnet size={14} />
         </button>
+        {/* Ripple edit toggle */}
+        <button onClick={() => setRippleEnabled(!rippleEnabled)} className={iconBtn(rippleEnabled)} title="Ripple edit: deleting shifts later clips">
+          <span className="text-[11px] font-bold">{rippleEnabled ? 'RPL' : 'rpl'}</span>
+        </button>
         {/* Loop region */}
         <button onClick={() => setLoopRegion(currentTime, null)} className={iconBtn(loopEnabled && loopStart === currentTime)} title="Set loop IN at playhead">
           <GripHorizontal size={14} />
@@ -512,7 +543,34 @@ export function Timeline() {
       <div
         ref={scrollRef}
         className="editor-scroll overflow-x-auto overflow-y-auto"
-        style={{ maxHeight: collapsed ? 0 : '12.5rem' }}
+        style={{ maxHeight: collapsed ? 0 : '12.5rem', touchAction: 'pan-x pan-y' }}
+        onPointerDown={(e) => {
+          if (e.pointerType === 'touch' && pinchRef.current) {
+            // second finger joins — record pinch start
+            pinchRef.current = null;
+          }
+        }}
+        onTouchStartCapture={(e) => {
+          if (e.touches.length === 2) {
+            const t = e.touches;
+            const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+            pinchRef.current = { startDist: dist, startZoom: zoom };
+          }
+        }}
+        onTouchMoveCapture={(e) => {
+          if (e.touches.length === 2 && pinchRef.current) {
+            const t = e.touches;
+            const dist = Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+            const ratio = dist / pinchRef.current.startDist;
+            const next = Math.min(5, Math.max(0.5, pinchRef.current.startZoom * ratio));
+            // preserve playhead-centered zoom
+            const before = timeToX(currentTime);
+            setZoom(Math.round(next * 2) / 2);
+            const after = timeToX(currentTime);
+            if (scrollRef.current) scrollRef.current.scrollLeft += after - before;
+          }
+        }}
+        onTouchEndCapture={() => { pinchRef.current = null; }}
       >
         <div ref={contentRef} className="relative" style={{ width: contentW, minWidth: '100%' }}>
           {/* Loop region shading */}
@@ -537,18 +595,36 @@ export function Timeline() {
             return (
               <div key={track.id} className="flex border-b border-[var(--editor-border)]">
                 {/* label */}
-                <div className="w-24 flex-shrink-0 editor-panel p-1.5 flex items-center gap-1 border-r border-[var(--editor-border)] sticky left-0 z-10">
-                  <button onClick={() => toggleTrackLock(track.id)} className={`w-5 h-5 rounded flex items-center justify-center ${track.locked ? 'bg-[var(--editor-accent-2)] text-white' : 'bg-[var(--editor-panel-3)] text-[var(--editor-text-2)]'}`} title={track.locked ? 'Unlock' : 'Lock'}>
-                    {track.locked ? <Lock size={10} /> : <Unlock size={10} />}
+                <div className="w-24 flex-shrink-0 editor-panel px-1 py-0.5 flex items-center gap-0.5 border-r border-[var(--editor-border)] sticky left-0 z-10 group">
+                  <span className="text-white text-[9px] truncate flex-1">{track.name}</span>
+                  {/* compact reorder controls (hover) */}
+                  <div className="flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => reorderTracks(track.order, Math.max(0, track.order - 1))} className="w-3.5 h-3 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white" title="Move layer up">
+                      <ChevronUp size={9} />
+                    </button>
+                    <button onClick={() => reorderTracks(track.order, Math.min(sceneTracks.length - 1, track.order + 1))} className="w-3.5 h-3 flex items-center justify-center text-[var(--editor-text-2)] hover:text-white" title="Move layer down">
+                      <ChevronDown size={9} />
+                    </button>
+                  </div>
+                  <button onClick={() => toggleTrackLock(track.id)} className={`w-4.5 h-4.5 rounded flex items-center justify-center ${track.locked ? 'bg-[var(--editor-accent-2)] text-white' : 'bg-[var(--editor-panel-3)] text-[var(--editor-text-2)]'}`} title={track.locked ? 'Unlock' : 'Lock'} style={{width:18,height:18}}>
+                    {track.locked ? <Lock size={9} /> : <Unlock size={9} />}
                   </button>
-                  <button className={`w-5 h-5 rounded flex items-center justify-center ${track.visible ? 'bg-green-500/70 text-white' : 'bg-[var(--editor-panel-3)] text-[var(--editor-text-2)]'}`} title={track.visible ? 'Hide' : 'Show'}>
-                    <Eye size={10} />
+                  <button onClick={() => deleteTrack(track.id)} className="w-4 h-4 rounded flex items-center justify-center text-[var(--editor-text-2)] hover:text-red-400" title="Delete layer" style={{width:16,height:16}}>
+                    <Trash2 size={9} />
                   </button>
-                  <span className="text-white text-[10px] truncate flex-1">{track.name}</span>
                 </div>
 
                 {/* content */}
-                <div className="flex-1 relative" style={{ height: 44, backgroundColor: '#14141B' }}>
+                <div
+                  className="flex-1 relative"
+                  style={{ height: 44, backgroundColor: '#14141B' }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    const x = e.clientX - rect.left + (scrollRef.current?.scrollLeft || 0);
+                    dropCharacterOntoTrack(e, xToTime(x));
+                  }}
+                >
                   {/* empty-track seek */}
                   <div
                     className="absolute inset-0"

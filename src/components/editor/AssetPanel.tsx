@@ -212,6 +212,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
   const {
     addCanvasObject,
     addClip,
+    addTrack,
     tracks,
     currentSceneId,
     canvasObjects,
@@ -339,7 +340,14 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
     (kind: 'character' | 'background' | 'prop' | 'text', extra: Record<string, unknown>) => {
       const trackType =
         kind === 'character' ? 'character' : kind === 'background' ? 'background' : kind === 'prop' ? 'prop' : 'text';
-      const track = findTrack(trackType);
+
+      // PROFESSIONAL LAYERS: each new character gets its OWN layer row
+      // (Character 1 / Character 2 / …) instead of sharing one giant track.
+      let track: ReturnType<typeof findTrack> | null = findTrack(trackType);
+      if (kind === 'character') {
+        const charName = (extra.name as string) || 'Character';
+        track = addTrack('character', charName);
+      }
       if (!track) return;
 
       const assetId = uuidv4();
@@ -366,7 +374,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
       const start = currentTime ?? 0;
       addClip(track.id, assetId, start, trackType === 'background' ? 5000 : 3000);
     },
-    [addCanvasObject, addClip, findTrack, currentProject, defaultSizeFor, currentTime]
+    [addCanvasObject, addClip, addTrack, findTrack, currentProject, defaultSizeFor, currentTime]
   );
 
   const handleAddCharacter = (char: OfficialCharacter | { type: CharacterType; name: string }) => {
@@ -730,8 +738,13 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                       <button
                         key={char.id}
                         onClick={() => handleAddCharacter(char)}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/animatex-character', JSON.stringify({ name: char.name, type: char.type }));
+                          e.dataTransfer.effectAllowed = 'copy';
+                        }}
                         className="p-2 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
-                        title={`${char.name} · ${char.category} — adds at playhead`}
+                        title={`${char.name} · ${char.category} — adds at playhead, drag to timeline`}
                       >
                         <CharacterThumb type={char.type} className="mb-1" />
                         <span className="text-[11px] text-gray-600 truncate w-full text-center">{char.name}</span>
