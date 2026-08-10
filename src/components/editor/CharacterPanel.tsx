@@ -16,6 +16,8 @@ import { getPublicCharacters, getCloudLibrary } from '@/lib/editor/characterLibr
 import type { LibraryCharacter } from '@/lib/editor/characterLibrary';
 import { Search, X, Sparkles, Star, Heart, Clock, Pencil, User, Image as ImageIcon } from 'lucide-react';
 import { useRecent, useFavorites, toggleFavorite, isFavorite, recordRecent, type AssetRef } from '@/lib/editor/useEditorUI';
+import { CHARACTER_LIBRARY_15, charMotionClass, type OfficialCharacter } from '@/lib/editor/characterLibrary15';
+import type { CharacterAction } from '@/types/animation';
 
 // ---------------------------------------------------------------------------
 // Placeholder characters — real assets will replace these.
@@ -80,7 +82,7 @@ export function CharacterPanel({ isOpen, onClose, onCreate }: CharacterPanelProp
     }
   }, [isOpen]);
 
-  const addCharacterToCanvas = (name: string, imageUrl?: string, dropTime?: number) => {
+  const addCharacterToCanvas = (name: string, imageUrl?: string, dropTime?: number, action: CharacterAction = 'idle', type?: string) => {
     // per-character layer row (professional stacked layers)
     const track = addTrack('character', name);
     if (!track) return;
@@ -108,10 +110,10 @@ export function CharacterPanel({ isOpen, onClose, onCreate }: CharacterPanelProp
       zIndex: 10,
       assetId,
       name,
-      characterType: 'custom',
+      characterType: (type as never) || 'custom',
       ...(imageUrl ? { imageUrl } : {}),
       expression: 'neutral',
-      action: 'idle',
+      action,
     });
     const start = dropTime !== undefined ? dropTime : (useEditorStore.getState().currentTime || 0);
     addClip(track.id, assetId, start, 3000);
@@ -270,6 +272,20 @@ export function CharacterPanel({ isOpen, onClose, onCreate }: CharacterPanelProp
               />
             ))}
 
+            {/* Official 15 stock characters (real PNG art, front view) */}
+            {CHARACTER_LIBRARY_15.map((ch) => (
+              <CharacterCard
+                key={ch.id}
+                name={ch.name}
+                imageUrl={ch.frontImageUrl}
+                stock
+                motionClass={charMotionClass(ch.default.action)}
+                pose={poses[ch.id] || 'FRONT'}
+                onPose={(p) => setPoses((prev) => ({ ...prev, [ch.id]: p }))}
+                onAdd={() => addCharacterToCanvas(ch.name, ch.frontImageUrl, undefined, ch.default.action, ch.type)}
+              />
+            ))}
+
             {/* Placeholder slots — TODO: replace with real character assets */}
             {PLACEHOLDER_CHARACTERS.map((ph) => (
               <CharacterCard
@@ -299,12 +315,14 @@ interface CharacterCardProps {
   name: string;
   imageUrl?: string;
   placeholder?: boolean;
+  stock?: boolean;
+  motionClass?: string;
   pose: Pose;
   onPose: (p: Pose) => void;
   onAdd: () => void;
 }
 
-function CharacterCard({ name, imageUrl, placeholder, pose, onPose, onAdd }: CharacterCardProps) {
+function CharacterCard({ name, imageUrl, placeholder, stock, motionClass, pose, onPose, onAdd }: CharacterCardProps) {
   const [dragState, setDragState] = useState<'idle' | 'dragging'>('idle');
   const [fav, setFav] = useState(() => (placeholder ? false : isFavorite({ kind: 'character', id: name + (imageUrl || ''), name })));
   const toggle = () => {
@@ -331,9 +349,21 @@ function CharacterCard({ name, imageUrl, placeholder, pose, onPose, onAdd }: Cha
         onDragEnd={() => setDragState('idle')}
         className={`w-full aspect-[3/4] relative block ${dragState === 'dragging' ? 'opacity-40 ring-2 ring-[var(--editor-accent)]' : ''}`}
       >
-        {imageUrl ? (
+        {stock && pose !== 'FRONT' ? (
+          // 3/4 angles not supplied yet — reuse the "coming soon" placeholder
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1 bg-[repeating-linear-gradient(45deg,#1E1E28,#1E1E28_6px,#23232F_6px,#23232F_12px)]">
+            <User size={22} className="text-[var(--editor-text-2)]" />
+            <span className="text-[9px] text-[var(--editor-text-2)]">soon</span>
+          </div>
+        ) : imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUrl} alt={name} className="w-full h-full object-contain p-2" loading="lazy" />
+          <img
+            src={imageUrl}
+            alt={name}
+            className={`w-full h-full object-contain p-2 ${motionClass || 'char-idle'}`}
+            loading="lazy"
+            draggable={false}
+          />
         ) : (
           <div
             className={`w-full h-full flex flex-col items-center justify-center gap-1 ${

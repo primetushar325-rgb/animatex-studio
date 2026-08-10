@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X, Check, Sparkles, Gauge } from 'lucide-react';
+import { charMotionClass } from '@/lib/editor/characterLibrary15';
 import { useEditorStore } from '@/store/editor-store';
 import { drawSceneContent } from '@/lib/editor/renderer';
 import { getActionPose } from '@/lib/editor/renderer';
@@ -240,6 +241,7 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
                   speed={speed}
                   fallbackLabel={fallbackUsed ? resolved?.label : undefined}
                   characterType={selectedObject?.characterType || 'boy'}
+                  imageUrl={selectedObject?.imageUrl}
                   onTap={() => applyAction(clip)}
                 />
               );
@@ -306,6 +308,7 @@ function ActionTileCard({
   speed,
   fallbackLabel,
   characterType,
+  imageUrl,
   onTap,
 }: {
   clip: ActionClip;
@@ -314,6 +317,7 @@ function ActionTileCard({
   speed: number;
   fallbackLabel?: string;
   characterType: CanvasObject['characterType'];
+  imageUrl?: string;
   onTap: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -376,15 +380,33 @@ function ActionTileCard({
           : 'border-[var(--editor-border)] hover:border-[var(--editor-accent)]/60'
       }`}
     >
-      {/* live preview canvas */}
-      <div className="w-full aspect-[4/5] flex items-center justify-center bg-gradient-to-b from-[#1E1E28] to-[#16161C]">
-        <canvas
-          ref={ref}
-          width={72}
-          height={90}
-          className="w-[62%] h-[86%]"
-          style={{ transform: tilt }}
-        />
+      {/* live preview — canvas loop for procedural, CSS motion for flat PNGs */}
+      <div className="w-full aspect-[4/5] flex items-center justify-center bg-gradient-to-b from-[#1E1E28] to-[#16161C] overflow-hidden">
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt={clip.label}
+            className={`w-[62%] h-[86%] object-contain ${charMotionClass(clip.action)}`}
+            style={{
+              animationDuration:
+                clip.action === 'run'
+                  ? `${0.45 / speed}s`
+                  : clip.action === 'walk' || clip.action === 'jog'
+                  ? `${0.9 / speed}s`
+                  : `${2.2 / speed}s`,
+            }}
+            draggable={false}
+          />
+        ) : (
+          <canvas
+            ref={ref}
+            width={72}
+            height={90}
+            className="w-[62%] h-[86%]"
+            style={{ transform: tilt }}
+          />
+        )}
       </div>
 
       {/* active check badge */}

@@ -2303,6 +2303,16 @@ function drawObject(
     if (obj.type === 'background') {
       drawImageCover(ctx, img, obj.x, obj.y, w, h);
     } else {
+      // Flat PNG characters: reuse the action cycle for a subtle CSS-like
+      // bob + sway so walk/run visibly move on canvas too (same motion data
+      // as the procedural characters — no separate timing system).
+      const bob = pose.bodyY * h * 2.2;
+      const sway = pose.armL * w * 0.18;
+      const tilt = pose.lean * 14;
+      ctx.save();
+      ctx.translate(obj.x + w / 2 + sway, obj.y + h / 2 + bob);
+      ctx.rotate((tilt * Math.PI) / 180);
+      ctx.translate(-(obj.x + w / 2), -(obj.y + h / 2));
       // characters / props keep aspect, fit inside box
       const ir = img.width / img.height;
       const r = w / h;
@@ -2317,6 +2327,7 @@ function drawObject(
       const dx = obj.x + (w - dw) / 2;
       const dy = obj.y + (h - dh) / 2;
       ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
     }
   } else if (obj.type === 'character') {
     const kind = (obj.characterType || 'boy') as CharacterType;

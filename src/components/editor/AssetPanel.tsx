@@ -13,7 +13,7 @@ import {
   type LibraryCharacter,
 } from '@/lib/editor/characterLibrary';
 import { SOUND_LIBRARY, previewSound, renderSound } from '@/lib/editor/soundKit';
-import { CHARACTER_LIBRARY_15, CHARACTER_CATEGORIES, type OfficialCharacter } from '@/lib/editor/characterLibrary15';
+import { CHARACTER_LIBRARY_15, CHARACTER_CATEGORIES, charMotionClass, type OfficialCharacter } from '@/lib/editor/characterLibrary15';
 import {
   Mic, Home, Building2, School, Store, BedDouble, TreePine, Waves, Tractor, Route,
   Armchair, Table as TableIcon, Smartphone, BookOpen, ShoppingBag, Car, UtensilsCrossed,
@@ -30,6 +30,7 @@ import type {
   Background,
   Prop,
   AudioClip,
+  CharacterAction,
 } from '@/types/animation';
 
 export type AssetTab = 'characters' | 'backgrounds' | 'props' | 'text' | 'audio';
@@ -141,7 +142,17 @@ const EXPR_ICON_MAP: Record<string, React.ComponentType<{ size?: number; classNa
 };
 
 /** Renders a real procedural character illustration on a mini canvas (no emoji). */
-function CharacterThumb({ type, className = '' }: { type: string; className?: string }) {
+function CharacterThumb({
+  type,
+  imageUrl,
+  action,
+  className = '',
+}: {
+  type: string;
+  imageUrl?: string;
+  action?: string;
+  className?: string;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
@@ -173,6 +184,25 @@ function CharacterThumb({ type, className = '' }: { type: string; className?: st
       transition: { type: 'none', duration: 0 },
     }, 0, 0, w, h, { playback: false });
   }, [type]);
+  if (imageUrl) {
+    // Real PNG art: render the uploaded transparent image with the CSS motion
+    // class for its default action (Idle bob / Walk rock / Run fast).
+    return (
+      <div className={`flex items-center justify-center ${className}`} style={{ width: 56, height: 68 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imageUrl}
+          alt=""
+          className={`w-full h-full object-contain ${action ? charMotionClass(action as CharacterAction) : 'char-idle'}`}
+          loading="lazy"
+          draggable={false}
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.visibility = 'hidden';
+          }}
+        />
+      </div>
+    );
+  }
   return <canvas ref={ref} width={56} height={68} className={`${className} object-contain`} />;
 }
 
@@ -384,6 +414,8 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
       name: char.name,
       expression: official?.default.expression || 'neutral',
       action: official?.default.action || 'idle',
+      // Real PNG art: the canvas renderer draws this image (drawImage) when set
+      ...(official?.frontImageUrl ? { imageUrl: official.frontImageUrl, characterType: 'custom' as CharacterType } : {}),
       ...(official ? { width: official.size.w, height: official.size.h } : {}),
     });
     onClose();
@@ -746,7 +778,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
                         className="p-2 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
                         title={`${char.name} · ${char.category} — adds at playhead, drag to timeline`}
                       >
-                        <CharacterThumb type={char.type} className="mb-1" />
+                        <CharacterThumb type={char.type} imageUrl={char.frontImageUrl} action={char.default.action} className="mb-1" />
                         <span className="text-[11px] text-gray-600 truncate w-full text-center">{char.name}</span>
                         <span className="text-[8px] text-gray-400">{char.category}</span>
                       </button>
