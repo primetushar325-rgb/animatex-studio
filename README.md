@@ -358,3 +358,15 @@ editor's character picker and get drawn on the canvas when clicked.
 
 - **Admin panel completed** (`/admin`): user management (search/filter, Free↔Pro upgrade/downgrade, suspend/restore), credits usage overview, asset-library review (approve/remove uploaded characters/backgrounds/props), analytics (totals + most-used assets), site-wide feature flags (toggle without redeploy). Admin-only (Access Denied for regular users; hidden from navigation). Firestore-backed with graceful empty state when Admin SDK env isn't set.
 - **Home page redesigned**: zero emoji (all lucide icons), black + blue/violet theme matching the editor, hero with a **real looping animated character demo** (canvas), feature cards with gradient icon chips + hover, templates with icons, polished demo placeholder, **Free vs Pro pricing section**, auto-updating footer year, scroll fade-ins, lazy hero.
+
+---
+
+## 🆕 PART 8 — 2D Character Action + Angle Animation Engine (2026-08)
+
+- **Data-driven Action Registry** (`src/lib/editor/animations.ts`): 57 action clips across 9 categories (Basic, Movement, Communication, Sitting, Lying, Work, Emotion, Hand Gestures, Special) with duration/fps/loop/speed/keywords (Bangla+English)/fallback. Adding new actions = one registry entry — no engine edits.
+- **4 angle views**: FRONT / 3/4 FRONT / 3/4 BACK / BACK — each with dedicated drawing (face offset, back-of-head, narrowed silhouette), applied to canvas + previews + export. Fallback chain (exact → nearest angle → generic → idle) never crashes.
+- **23 new real motions** (call, greet, sit-relaxed, sleep-side, lie-idle, clean, farm, dig, carry, pick, drop, turn, bend, kneel, stand-up, sit-down, raise-hand, point-left/right/forward, explain, receive, gesture).
+- **PoseAnimator**: smooth 220ms blending between actions — no teleporting; main canvas and picker previews share the exact same engine.
+- **ActionPicker upgraded**: category chips, search, 4 angle tabs, live looping previews at the selected angle, speed control (0.25x–2x synced to timeline), selected-state highlight, fallback "≈ label" badges.
+- **Admin**: Animations tab — edit clip speed/loop/duration/fps, toggle ON/OFF, add new actions (saved to Firestore via `/api/admin/animations`, localStorage fallback; editor merges overrides).
+- Export (GIF/WebM/PNG) renders the animated motion at the selected view automatically (verified: frames differ per frame).

@@ -1,55 +1,36 @@
 'use client';
 
 // ============================================================================
-// ActionPicker — bottom sheet that appears when a character is selected.
-// Shows the character + search + angle tabs + a grid of pose/action tiles.
-// EVERY tile renders a small LOOPING PREVIEW of the actual motion on a mini
-// canvas (not a static image). Tapping applies the action to the character
-// on the canvas and records a keyframe on its timeline clip.
+// ActionPicker — character action + angle animation popup.
+// Fully data-driven via the Action Registry (src/lib/editor/animations.ts):
+//   - categories, search, view (angle) tabs
+//   - each tile renders a LIVE looping preview of the actual motion at the
+//     selected angle, using the SAME engine as the main canvas (PoseAnimator
+//     + renderer) so preview and applied motion can never drift
+//   - smooth transitions between actions via pose blending (no teleporting)
+//   - speed control + fallback handling for missing angle/action combos
 // ============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Check, Sparkles } from 'lucide-react';
+import { Search, X, Check, Sparkles, Gauge } from 'lucide-react';
 import { useEditorStore } from '@/store/editor-store';
 import { drawSceneContent } from '@/lib/editor/renderer';
-import type { CanvasObject, CharacterAction, CharacterExpression } from '@/types/animation';
+import { getActionPose } from '@/lib/editor/renderer';
+import {
+  ACTION_CATEGORIES,
+  ACTION_REGISTRY,
+  VIEW_LABELS,
+  searchActions,
+  resolveClip,
+  PoseAnimator,
+  setActionOverrides,
+  type ActionClip,
+  type AnimationView,
+} from '@/lib/editor/animations';
+import type { CanvasObject, CharacterType } from '@/types/animation';
 
-type Angle = 'FRONT' | '3/4 FRONT' | '3/4 BACK';
-const ANGLES: Angle[] = ['FRONT', '3/4 FRONT', '3/4 BACK'];
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
-interface ActionTile {
-  id: string;
-  label: string;
-  action: CharacterAction;
-  expression?: CharacterExpression;
-  soon?: boolean;
-}
-
-// The reference pose set (extend later as more get added)
-const ACTION_TILES: ActionTile[] = [
-  { id: 'idle', label: 'Idle', action: 'idle' },
-  { id: 'walk', label: 'Walk', action: 'walk' },
-  { id: 'talk', label: 'Talking', action: 'talk' },
-  { id: 'sit', label: 'Sitting', action: 'sit' },
-  { id: 'idle-happy', label: 'Idle Happy', action: 'idle', expression: 'happy' },
-  { id: 'run', label: 'Run', action: 'run' },
-  { id: 'sit-kneel', label: 'Sitting On Knees', action: 'sit-kneel' },
-  { id: 'namaskar', label: 'Namaskar Sitting', action: 'namaskar' },
-  { id: 'give', label: 'Giving Things', action: 'give' },
-  { id: 'sweep', label: 'Dust Collect Karna', action: 'sweep' },
-  { id: 'wash', label: 'Bartan Dhona Loop', action: 'wash' },
-  { id: 'sit-floor', label: 'Sitting On Floor', action: 'sit' },
-  { id: 'jog', label: 'Jogging', action: 'jog' },
-  { id: 'sit-crossed', label: 'Sitting Crossed Leg', action: 'sit-crossed' },
-  { id: 'sit-floor-idle', label: 'Sitting Floor Idle', action: 'sit' },
-  { id: 'sleep-stomach', label: 'Sleeping On Stomach', action: 'sleep-stomach' },
-  { id: 'sit-idle', label: 'Sitting Idle', action: 'sit' },
-  { id: 'cook', label: 'Cooking', action: 'cook' },
-  { id: 'fly', label: 'Flying Idle', action: 'fly' },
-  { id: 'sleep-back', label: 'Sleeping On Back', action: 'sleep-back' },
-];
-
-// lightweight scene for preview rendering
 const PREVIEW_SCENE = {
   id: 'preview',
   projectId: '',
@@ -68,64 +49,86 @@ interface ActionPickerProps {
 
 export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
   const [search, setSearch] = useState('');
-  const [angle, setAngle] = useState<Angle>('FRONT');
+  const [category, setCategory] = useState<(typeof ACTION_CATEGORIES)[number]['id']>('all');
+  const [view, setView] = useState<AnimationView>('front');
+  const [speed, setSpeed] = useState(1);
 
-  const { canvasObjects, selectedObjectId, scenes, currentSceneId, tracks, clips, setObjectAction, setObjectExpression, addKeyframe } = useEditorStore();
+  const { canvasObjects, selectedObjectId, currentSceneId, clips, setObjectAction, setObjectExpression, setPlaybackRate, addKeyframe } = useEditorStore();
 
   const selectedObject = canvasObjects.find((o) => o.id === selectedObjectId) || null;
   const isCharacter = selectedObject?.type === 'character';
 
-  // reset search when closed (deferred so it never runs mid-render)
+  // reset search/category when closed + load admin overrides once
   useEffect(() => {
     if (isOpen) return;
     const t = setTimeout(() => {
       setSearch('');
-      setAngle('FRONT');
+      setCategory('all');
     }, 0);
     return () => clearTimeout(t);
   }, [isOpen]);
 
-  const filtered = ACTION_TILES.filter((t) =>
-    t.label.toLowerCase().includes(search.trim().toLowerCase())
-  );
+  // pull admin-managed animation overrides (speed/loop/new actions) once
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/admin/animations')
+      .then((r) => r.json())
+      .then((data) => {
+        if (alive && data.overrides) setActionOverrides(data.overrides);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
-  const applyAction = (tile: ActionTile) => {
-    if (!selectedObject || tile.soon) return;
-    setObjectAction(selectedObject.id, tile.action);
-    if (tile.expression) setObjectExpression(selectedObject.id, tile.expression);
+  const clipsForCategory = searchActions(search, category);
 
-    // record a keyframe on the character's clip at the current playhead so the
-    // timeline reflects the action too
-    const clip = clips.find(
+  const applyAction = (clip: ActionClip) => {
+    if (!selectedObject || !isCharacter) return;
+    setObjectAction(selectedObject.id, clip.action);
+    if (clip.expression) setObjectExpression(selectedObject.id, clip.expression);
+    // apply the selected view to the object so canvas renders at this angle
+    if (view !== 'front') {
+      useEditorStore.getState().updateCanvasObject(selectedObject.id, { view });
+    }
+    // record a keyframe on the character's clip at the current playhead
+    const clipRow = clips.find(
       (c) =>
         c.assetId === selectedObject.assetId &&
         c.assetId != null &&
         c.sceneId === currentSceneId
     );
-    if (clip) {
+    if (clipRow) {
       const st = useEditorStore.getState();
-      const clipTime = st.currentTime - clip.startTime;
+      const clipTime = st.currentTime - clipRow.startTime;
       if (clipTime >= 0) {
-        addKeyframe(clip.id, clipTime, {
-          action: tile.action,
-          ...(tile.expression ? { expression: tile.expression } : {}),
+        addKeyframe(clipRow.id, clipTime, {
+          action: clip.action,
+          ...(clip.expression ? { expression: clip.expression } : {}),
         });
       }
     }
     onClose();
   };
 
+  const changeSpeed = (s: number) => {
+    setSpeed(s);
+    setPlaybackRate(s); // sync timeline playback so canvas matches previews
+  };
+
   if (!isOpen) return null;
 
   const currentAction = selectedObject?.action || 'idle';
   const currentExpression = selectedObject?.expression || 'neutral';
+  const currentView = (selectedObject?.view as AnimationView) || 'front';
 
   return (
     <div className="fixed inset-0 z-[65] flex flex-col justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
       <div
-        className="relative editor-panel border-t border-[var(--editor-border)] rounded-t-3xl shadow-2xl max-h-[82vh] flex flex-col animate-slideUp"
+        className="relative editor-panel border-t border-[var(--editor-border)] rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col animate-slideUp"
         onClick={(e) => e.stopPropagation()}
       >
         {/* grab handle */}
@@ -135,7 +138,7 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
 
         {/* Header: selected character */}
         <div className="px-4 py-3 flex items-center gap-3 border-b border-[var(--editor-border)]">
-          <SelectedThumb obj={selectedObject} />
+          <SelectedThumb obj={selectedObject} view={currentView} />
           <div className="flex-1 min-w-0">
             <p className="text-white font-semibold text-sm truncate">
               {selectedObject?.name || 'Character'}
@@ -144,6 +147,24 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
               <Check size={10} /> Selected
             </span>
           </div>
+
+          {/* playback speed */}
+          <div className="flex items-center gap-1 editor-panel-2 rounded-xl px-1.5 py-1">
+            <Gauge size={13} className="text-[var(--editor-text-2)]" />
+            <select
+              value={speed}
+              onChange={(e) => changeSpeed(parseFloat(e.target.value))}
+              className="bg-transparent text-white text-[11px] focus:outline-none"
+              title="Animation speed"
+            >
+              {SPEEDS.map((s) => (
+                <option key={s} value={s} className="bg-[#16161C]">
+                  {s}x
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full editor-panel-2 text-[var(--editor-text-2)] hover:text-white">
             <X size={16} />
           </button>
@@ -162,56 +183,75 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
           </div>
         </div>
 
-        {/* Angle tabs */}
-        <div className="px-4 pt-3">
-          <div className="grid grid-cols-3 gap-1.5">
-            {ANGLES.map((a) => (
+        {/* Category chips */}
+        <div className="px-4 pt-2.5 editor-scroll overflow-x-auto flex gap-1.5">
+          {ACTION_CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setCategory(cat.id)}
+              className={`px-3 py-1.5 rounded-full text-[11px] whitespace-nowrap transition-colors ${
+                category === cat.id
+                  ? 'editor-gradient text-white font-medium'
+                  : 'editor-panel-2 text-[var(--editor-text-2)] hover:text-white'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Angle (view) tabs */}
+        <div className="px-4 pt-2.5">
+          <div className="grid grid-cols-4 gap-1.5">
+            {(Object.keys(VIEW_LABELS) as AnimationView[]).map((v) => (
               <button
-                key={a}
-                onClick={() => setAngle(a)}
+                key={v}
+                onClick={() => setView(v)}
                 className={`py-2 rounded-lg text-[11px] font-semibold transition-colors ${
-                  angle === a
+                  view === v
                     ? 'editor-gradient text-white'
                     : 'editor-panel-2 text-[var(--editor-text-2)] hover:text-white'
                 }`}
               >
-                {a}
+                {VIEW_LABELS[v]}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Pose grid */}
+        {/* Action grid */}
         <div className="flex-1 overflow-y-auto editor-scroll px-4 py-4">
           <p className="text-[10px] uppercase tracking-wider text-[var(--editor-text-2)] mb-2 flex items-center gap-1">
-            <Sparkles size={11} className="text-[var(--editor-accent-2)]" /> Animations
+            <Sparkles size={11} className="text-[var(--editor-accent-2)]" /> Animations · {VIEW_LABELS[view]}
           </p>
           <div className="grid grid-cols-2 gap-3">
-            {filtered.map((tile) => {
+            {clipsForCategory.map((clip) => {
+              const resolved = resolveClip(clip.id, view, selectedObject?.characterType);
               const isActive =
-                !tile.soon &&
-                tile.action === currentAction &&
-                (!tile.expression || tile.expression === currentExpression);
+                clip.action === currentAction &&
+                (!clip.expression || clip.expression === currentExpression);
+              const fallbackUsed = resolved && resolved.id !== clip.id;
               return (
                 <ActionTileCard
-                  key={tile.id}
-                  tile={tile}
+                  key={clip.id}
+                  clip={clip}
                   active={isActive}
-                  angle={angle}
+                  view={view}
+                  speed={speed}
+                  fallbackLabel={fallbackUsed ? resolved?.label : undefined}
                   characterType={selectedObject?.characterType || 'boy'}
-                  color={selectedObject?.color}
-                  onTap={() => applyAction(tile)}
+                  onTap={() => applyAction(clip)}
                 />
               );
             })}
           </div>
 
-          {filtered.length === 0 && (
+          {clipsForCategory.length === 0 && (
             <p className="text-center text-xs text-[var(--editor-text-2)] py-8">No animation found</p>
           )}
 
           <p className="text-center text-[10px] text-[var(--editor-text-2)] mt-4">
-            Tile-এ ক্লিক করলেই character-এ প্রয়োগ হয় — আরো animation আসছে
+            প্রতিটা tile-এ আসল motion loop হয় — ট্যাপ করলেই character-এ প্রয়োগ
           </p>
         </div>
       </div>
@@ -220,103 +260,112 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Selected character thumbnail (static preview)
+// Selected character thumbnail (live, at current view)
 // ---------------------------------------------------------------------------
 
-function SelectedThumb({ obj }: { obj: CanvasObject | null }) {
+function SelectedThumb({ obj, view }: { obj: CanvasObject | null; view: AnimationView }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef(new PoseAnimator());
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    const w = 56;
-    const h = 64;
-    const o: CanvasObject = {
-      ...(obj || { id: 'x', type: 'character', x: 0, y: 0, width: 44, height: 56, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, zIndex: 1 }),
-      x: 4,
-      y: 4,
-      width: 48,
-      height: 56,
-      action: obj?.action || 'idle',
-      expression: obj?.expression || 'neutral',
+    let raf = 0;
+    let clock = 0;
+    let last = performance.now();
+    const draw = (now: number) => {
+      clock += now - last;
+      last = now;
+      const action = (obj?.action as never) || 'idle';
+      const pose = animRef.current.step(action, clock, now);
+      const o: CanvasObject = {
+        ...(obj || { id: 'x', type: 'character', x: 0, y: 0, width: 44, height: 56, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, zIndex: 1 }),
+        x: 2, y: 2, width: 52, height: 60,
+        action, expression: obj?.expression || 'neutral', view,
+      };
+      ctx.clearRect(0, 0, c.width, c.height);
+      drawSceneContent(ctx, [o], PREVIEW_SCENE, 0, clock, c.width, c.height, { playback: true });
+      raf = requestAnimationFrame(draw);
     };
-    drawSceneContent(ctx, [o], PREVIEW_SCENE, 0, 0, w, h, { playback: false });
-  }, [obj]);
-  return (
-    <canvas ref={ref} width={56} height={64} className="w-14 h-16 rounded-xl bg-[var(--editor-panel-2)] shrink-0" />
-  );
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obj?.id, obj?.action, obj?.expression, view]);
+  return <canvas ref={ref} width={56} height={64} className="w-14 h-16 rounded-xl bg-[var(--editor-panel-2)] shrink-0" />;
 }
 
 // ---------------------------------------------------------------------------
-// Action tile with LIVE looping preview
+// Action tile with LIVE looping preview at the selected view angle
 // ---------------------------------------------------------------------------
 
 function ActionTileCard({
-  tile,
+  clip,
   active,
-  angle,
+  view,
+  speed,
+  fallbackLabel,
   characterType,
-  color,
   onTap,
 }: {
-  tile: ActionTile;
+  clip: ActionClip;
   active: boolean;
-  angle: Angle;
+  view: AnimationView;
+  speed: number;
+  fallbackLabel?: string;
   characterType: CanvasObject['characterType'];
-  color?: string;
   onTap: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const clockRef = useRef(0);
+  const animRef = useRef<PoseAnimator | null>(null);
 
-  // loop the preview at ~12fps using wall-clock delta (cheap, smooth enough)
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
     const ctx = c.getContext('2d');
     if (!ctx) return;
+    if (!animRef.current) animRef.current = new PoseAnimator();
 
-    let raf: number;
+    let raf = 0;
+    let clock = 0;
     let last = performance.now();
+
     const draw = (now: number) => {
       const delta = now - last;
       last = now;
-      clockRef.current += delta;
+      clock += delta;
 
-      const w = c.width;
-      const h = c.height;
-      ctx.clearRect(0, 0, w, h);
+      const pose = animRef.current!.step(clip.action, clock, now, speed);
 
       const o: CanvasObject = {
         id: 'prev',
         type: 'character',
         x: 4,
         y: 4,
-        width: w - 8,
-        height: h - 8,
+        width: c.width - 8,
+        height: c.height - 8,
         rotation: 0,
         scaleX: 1,
         scaleY: 1,
         opacity: 1,
         zIndex: 1,
         characterType,
-        color,
-        action: tile.soon ? 'idle' : tile.action,
-        expression: tile.expression || 'neutral',
+        action: clip.action,
+        expression: clip.expression || 'neutral',
+        view,
       };
-      drawSceneContent(ctx, [o], PREVIEW_SCENE, 0, clockRef.current, w, h, {
-        playback: true,
-      });
+      ctx.clearRect(0, 0, c.width, c.height);
+      drawSceneContent(ctx, [o], PREVIEW_SCENE, 0, clock, c.width, c.height, { playback: true });
 
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [tile, characterType, color]);
+  }, [clip, view, speed, characterType]);
 
+  // Angle visual transform: 3/4 views get a slight horizontal squeeze.
   const tilt =
-    angle === '3/4 FRONT' ? 'scaleX(0.92)' : angle === '3/4 BACK' ? 'scaleX(-0.92)' : 'none';
+    view === '3-4-front' ? 'scaleX(0.94)' : view === '3-4-back' ? 'scaleX(-0.94)' : view === 'back' ? 'scaleX(-1)' : 'none';
 
   return (
     <button
@@ -325,7 +374,7 @@ function ActionTileCard({
         active
           ? 'border-[var(--editor-accent)] ring-2 ring-[var(--editor-accent)]/40'
           : 'border-[var(--editor-border)] hover:border-[var(--editor-accent)]/60'
-      } ${tile.soon ? 'opacity-55' : ''}`}
+      }`}
     >
       {/* live preview canvas */}
       <div className="w-full aspect-[4/5] flex items-center justify-center bg-gradient-to-b from-[#1E1E28] to-[#16161C]">
@@ -345,15 +394,15 @@ function ActionTileCard({
         </span>
       )}
 
-      {/* soon tag */}
-      {tile.soon && (
-        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[8px] font-semibold">
-          Soon
+      {/* fallback badge — animation resolved from a compatible clip */}
+      {fallbackLabel && (
+        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-[#8B5CF6]/30 text-[#A78BFA] text-[8px] font-semibold">
+          ≈ {fallbackLabel}
         </span>
       )}
 
       <p className="px-1.5 py-1.5 text-[10px] text-white truncate text-center font-medium">
-        {tile.label}
+        {clip.label}
       </p>
     </button>
   );

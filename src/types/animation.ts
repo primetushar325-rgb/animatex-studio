@@ -131,7 +131,13 @@ export type CharacterAction =
   | 'dance' | 'fall'
   // Extended pose set (used by the Action Picker)
   | 'sit-kneel' | 'namaskar' | 'give' | 'sweep' | 'wash' | 'jog'
-  | 'sit-crossed' | 'sleep-stomach' | 'cook' | 'fly' | 'sleep-back';
+  | 'sit-crossed' | 'sleep-stomach' | 'cook' | 'fly' | 'sleep-back'
+  // Part 8 — full action library
+  | 'call' | 'greet' | 'sit-relaxed' | 'sleep-side' | 'lie-idle'
+  | 'clean' | 'farm' | 'dig' | 'carry' | 'pick' | 'drop'
+  | 'turn' | 'bend' | 'kneel' | 'stand-up' | 'sit-down'
+  | 'raise-hand' | 'point-left' | 'point-right' | 'point-forward'
+  | 'explain' | 'receive' | 'gesture';
 
 export type MouthShape = 
   | 'closed' | 'A' | 'E' | 'I' | 'O' | 'U' | 'M' | 'open';
@@ -160,6 +166,9 @@ export interface BoneTransform {
   scaleX: number;
   scaleY: number;
 }
+
+/** Camera/character view angle used by the animation engine. */
+export type AnimationView = 'front' | '3-4-front' | '3-4-back' | 'back';
 
 // Canvas Objects (elements placed on the stage)
 export type CanvasObjectType = 'character' | 'background' | 'prop' | 'text';
@@ -219,6 +228,8 @@ export interface CanvasObject {
   motionStart?: number;
   /** Flip horizontally (mirror) */
   flipX?: boolean;
+  /** Character view angle (drives angle-specific drawing + animation) */
+  view?: AnimationView;
   /** Day/night/weather tint variant for backgrounds */
   variant?: 'day' | 'night' | 'rain' | 'cloudy' | 'sunset' | undefined;
 }

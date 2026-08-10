@@ -13,6 +13,7 @@
 // ============================================================================
 
 import type {
+  AnimationView,
   CanvasObject,
   CharacterAction,
   CharacterExpression,
@@ -683,6 +684,299 @@ export function getActionPose(action: CharacterAction, t: number): CharacterPose
       p.blink = true;
       return p;
     }
+    // ================================================================
+    // Part 8 — full action library motions
+    // ================================================================
+    case 'call': {
+      // arm raised, beckoning inward repeatedly
+      const w = cycle(t, 700);
+      const s = Math.sin(w);
+      p.armR = 2.2 - s * 0.25;
+      p.elbowR = 0.5 + s * 0.25;
+      p.armL = 0.2;
+      p.elbowL = 0.5;
+      p.headTilt = 0.1;
+      p.bodyY = Math.abs(s) * 0.01;
+      return p;
+    }
+    case 'greet': {
+      // bowing head + wave once per cycle
+      const w = cycle(t, 1200);
+      const bow = Math.max(0, Math.sin(w));
+      p.lean = bow * 0.25;
+      p.headTilt = bow * 0.12;
+      p.armR = 1.9 + bow * 0.3;
+      p.elbowR = 0.4 + bow * 0.2;
+      p.armL = 0.15;
+      p.elbowL = 0.4;
+      return p;
+    }
+    case 'sit-relaxed': {
+      // slouched sitting, arms resting, slight rock
+      const w = cycle(t, 2800);
+      p.legL = 0.9;
+      p.legR = 0.9;
+      p.kneeL = 1.1;
+      p.kneeR = 1.1;
+      p.lean = 0.12 + Math.sin(w) * 0.03;
+      p.armL = 0.35;
+      p.armR = 0.35;
+      p.elbowL = 0.55;
+      p.elbowR = 0.55;
+      p.bodyY = Math.sin(w) * 0.012;
+      p.headTilt = 0.06;
+      return p;
+    }
+    case 'sleep-side': {
+      // on side — lean over, one arm folded
+      const w = cycle(t, 3000);
+      p.lean = 1.05;
+      p.bodyY = 0.09 + Math.sin(w) * 0.012;
+      p.armL = 1.0;
+      p.armR = 0.5;
+      p.elbowL = 1.2;
+      p.elbowR = 0.7;
+      p.legL = 0.85;
+      p.legR = 0.5;
+      p.kneeL = 0.9;
+      p.kneeR = 0.7;
+      p.headTilt = -0.35;
+      p.blink = true;
+      return p;
+    }
+    case 'lie-idle': {
+      // lying flat, slight breathing
+      const w = cycle(t, 2600);
+      p.lean = -0.05;
+      p.bodyY = 0.07 + Math.sin(w) * 0.015;
+      p.armL = 0.5;
+      p.armR = 0.5;
+      p.elbowL = 0.5;
+      p.elbowR = 0.5;
+      p.legL = 0.4;
+      p.legR = 0.4;
+      return p;
+    }
+    case 'clean': {
+      // scrubbing with both hands side to side
+      const w = cycle(t, 900);
+      const s = Math.sin(w);
+      p.armL = 0.8 - s * 0.5;
+      p.armR = 0.8 + s * 0.5;
+      p.elbowL = 0.7;
+      p.elbowR = 0.7;
+      p.lean = 0.45;
+      p.bodyY = Math.abs(s) * 0.015;
+      return p;
+    }
+    case 'farm': {
+      // hoeing: rhythmic arm raise + lean
+      const w = cycle(t, 1200);
+      const s = Math.sin(w);
+      const lift = Math.max(0, s);
+      p.armL = 0.5 + lift * 0.9;
+      p.armR = 1.6 - lift * 0.4;
+      p.elbowL = 0.6;
+      p.elbowR = 0.25;
+      p.lean = 0.35 + lift * 0.15;
+      p.bodyY = Math.abs(s) * 0.03;
+      p.legL = 0.5 - s * 0.12;
+      p.legR = 0.5 + s * 0.12;
+      return p;
+    }
+    case 'dig': {
+      // shovel: arm swing down
+      const w = cycle(t, 1100);
+      const s = Math.sin(w);
+      p.armL = 1.3 - Math.max(0, s) * 0.9;
+      p.armR = 1.3 - Math.max(0, s) * 0.9;
+      p.elbowL = 0.4;
+      p.elbowR = 0.4;
+      p.lean = 0.5 + Math.max(0, s) * 0.2;
+      p.bodyY = Math.abs(s) * 0.02;
+      return p;
+    }
+    case 'carry': {
+      // arms forward holding something, steady walk-ish sway
+      const w = cycle(t, 1600);
+      p.armL = 0.85;
+      p.armR = 0.85;
+      p.elbowL = 1.0;
+      p.elbowR = 1.0;
+      p.lean = 0.1;
+      p.bodyY = Math.sin(w) * 0.01;
+      p.headTilt = Math.sin(w) * 0.02;
+      return p;
+    }
+    case 'pick': {
+      // reach down, grab, rise
+      const w = cycle(t, 1400);
+      const down = Math.max(0, Math.sin(w));
+      p.lean = 0.15 + down * 0.75;
+      p.armL = 0.6 + down * 0.9;
+      p.armR = 0.6 + down * 0.9;
+      p.elbowL = 0.5 + down * 0.5;
+      p.elbowR = 0.5 + down * 0.5;
+      p.bodyY = down * 0.04;
+      return p;
+    }
+    case 'drop': {
+      // hold out, release
+      const w = cycle(t, 1200);
+      const release = Math.max(0, Math.sin(w));
+      p.armL = 0.8 + release * 0.3;
+      p.armR = 0.8 + release * 0.3;
+      p.elbowL = 0.9 - release * 0.3;
+      p.elbowR = 0.9 - release * 0.3;
+      p.lean = 0.12;
+      return p;
+    }
+    case 'turn': {
+      // twist torso side to side
+      const w = cycle(t, 1200);
+      const s = Math.sin(w);
+      p.lean = s * 0.14;
+      p.headTilt = s * 0.2;
+      p.armL = 0.5 + s * 0.3;
+      p.armR = 0.5 - s * 0.3;
+      p.elbowL = 0.5;
+      p.elbowR = 0.5;
+      p.legL = s * 0.08;
+      p.legR = -s * 0.08;
+      return p;
+    }
+    case 'bend': {
+      // deep bend, hands toward ground
+      const w = cycle(t, 1500);
+      const depth = 0.6 + 0.35 * Math.max(0, Math.sin(w));
+      p.lean = depth;
+      p.armL = 0.4 + depth * 0.7;
+      p.armR = 0.4 + depth * 0.7;
+      p.elbowL = 0.6;
+      p.elbowR = 0.6;
+      p.kneeL = 0.4;
+      p.kneeR = 0.4;
+      p.bodyY = 0.03;
+      return p;
+    }
+    case 'kneel': {
+      // one knee down, arms on knee
+      const w = cycle(t, 1600);
+      p.legL = 1.75;
+      p.legR = 0.5;
+      p.kneeL = -0.85;
+      p.kneeR = 0.6;
+      p.armL = 0.4;
+      p.armR = 0.4;
+      p.elbowL = 0.8;
+      p.elbowR = 0.8;
+      p.bodyY = 0.05 + Math.sin(w) * 0.008;
+      return p;
+    }
+    case 'stand-up': {
+      // rise from low to standing (loop = replay)
+      const w = cycle(t, 900);
+      const u = Math.min(1, (t % 900) / 900);
+      const rise = Math.sin(Math.min(1, u) * Math.PI * 0.5);
+      p.lean = (1 - rise) * 0.5;
+      p.kneeL = (1 - rise) * 0.9;
+      p.kneeR = (1 - rise) * 0.9;
+      p.armL = (1 - rise) * 0.4;
+      p.armR = (1 - rise) * 0.4;
+      p.bodyY = (1 - rise) * 0.04;
+      void w;
+      return p;
+    }
+    case 'sit-down': {
+      // lower from standing to sitting
+      const u = Math.min(1, (t % 900) / 900);
+      const lower = Math.sin(u * Math.PI * 0.5);
+      p.lean = lower * 0.35;
+      p.kneeL = lower * 1.0;
+      p.kneeR = lower * 1.0;
+      p.legL = lower * 0.85;
+      p.legR = lower * 0.85;
+      p.armL = lower * 0.3;
+      p.armR = lower * 0.3;
+      p.bodyY = lower * 0.03;
+      return p;
+    }
+    case 'raise-hand': {
+      // one arm up, waving slightly
+      const w = cycle(t, 1200);
+      p.armR = 2.5;
+      p.elbowR = Math.sin(w) * 0.15 - 0.1;
+      p.armL = 0.15;
+      p.elbowL = 0.4;
+      p.headTilt = 0.1;
+      return p;
+    }
+    case 'point-left': {
+      p.armL = 1.45;
+      p.elbowL = 0.05;
+      p.armR = 0.3;
+      p.elbowR = 0.5;
+      p.legL = 0.15;
+      p.legR = 0.35;
+      p.headTilt = -0.18;
+      p.lean = -0.06;
+      return p;
+    }
+    case 'point-right': {
+      p.armR = 1.45;
+      p.elbowR = 0.05;
+      p.armL = 0.3;
+      p.elbowL = 0.5;
+      p.legL = 0.35;
+      p.legR = 0.15;
+      p.headTilt = 0.18;
+      p.lean = 0.06;
+      return p;
+    }
+    case 'point-forward': {
+      // both arms extended forward
+      p.armL = 0.7;
+      p.armR = 0.7;
+      p.elbowL = -0.1;
+      p.elbowR = -0.1;
+      p.lean = 0.15;
+      p.headTilt = 0.08;
+      return p;
+    }
+    case 'explain': {
+      // rhythmic open-hand gesturing
+      const w = cycle(t, 1000);
+      const s = Math.sin(w);
+      p.armL = 0.5 - s * 0.45;
+      p.armR = 0.5 + s * 0.45;
+      p.elbowL = 0.35;
+      p.elbowR = 0.35;
+      p.headTilt = s * 0.06;
+      p.mouthOpen = 0.2 + 0.3 * Math.abs(s);
+      return p;
+    }
+    case 'receive': {
+      // hands forward, pull back
+      const w = cycle(t, 1400);
+      const reach = Math.max(0, Math.sin(w));
+      p.armL = 0.7 - reach * 0.2;
+      p.armR = 0.7 - reach * 0.2;
+      p.elbowL = 0.3 + reach * 0.5;
+      p.elbowR = 0.3 + reach * 0.5;
+      p.lean = 0.1;
+      return p;
+    }
+    case 'gesture': {
+      // casual hand movement while standing
+      const w = cycle(t, 1000);
+      const s = Math.sin(w);
+      p.armR = 0.9 + s * 0.5;
+      p.elbowR = 0.5 - s * 0.15;
+      p.armL = 0.2;
+      p.elbowL = 0.5;
+      p.headTilt = s * 0.05;
+      return p;
+    }
     default:
       return p;
   }
@@ -1256,13 +1550,24 @@ function drawHumanoid(
   obj: CanvasObject,
   pose: CharacterPose,
   lifeT: number,
-  expression: CharacterExpression
+  expression: CharacterExpression,
+  view: AnimationView = 'front'
 ) {
   const w = obj.width * obj.scaleX;
   const h = obj.height * obj.scaleY;
   const x = obj.x;
   const y = obj.y;
   const cfg = HUMAN_PALETTES[obj.characterType || 'boy'] || HUMAN_PALETTES.boy;
+
+  // Angle system — narrower silhouette + slight vertical squash for turned views
+  const viewScaleX = view === '3-4-front' ? 0.92 : view === '3-4-back' ? 0.88 : view === 'back' ? 0.9 : 1;
+  const viewOffsetX = view === '3-4-front' ? w * 0.02 : 0;
+  const isBack = view === '3-4-back' || view === 'back';
+  const isQuarter = view === '3-4-front' || view === '3-4-back';
+  ctx.save();
+  ctx.translate(x + w / 2 + viewOffsetX, y + h / 2);
+  ctx.scale(viewScaleX, isQuarter ? 0.99 : 1);
+  ctx.translate(-(x + w / 2 + viewOffsetX), -(y + h / 2));
 
   const bob = pose.bodyY * h + Math.sin(lifeT / 620) * h * 0.006;
   const shake = pose.bounce * Math.sin(lifeT / 90) * h * 0.008;
@@ -1460,8 +1765,41 @@ function drawHumanoid(
     ctx.fill();
   }
 
-  // face
-  drawFace(ctx, headCX, headCY, headR, expression, pose.mouthOpen, pose.blink, cfg);
+  // face — hidden for back views (draw back-of-head hair instead)
+  if (view === 'back') {
+    // full back of head: hair dome covering
+    ctx.fillStyle = cfg.hair;
+    ctx.beginPath();
+    ctx.arc(headCX, headCY, headR * 1.02, 0, TAU);
+    ctx.fill();
+    // neck shadow
+    ctx.strokeStyle = cfg.hair;
+    ctx.lineWidth = headR * 0.22;
+    ctx.beginPath();
+    ctx.moveTo(headCX - headR * 0.35, headCY + headR * 0.7);
+    ctx.lineTo(headCX + headR * 0.35, headCY + headR * 0.7);
+    ctx.stroke();
+  } else if (view === '3-4-back') {
+    // mostly back — hair + a sliver of the side of the face
+    ctx.fillStyle = cfg.hair;
+    ctx.beginPath();
+    ctx.arc(headCX, headCY, headR * 1.02, Math.PI * 0.85, Math.PI * 1.15);
+    ctx.fill();
+    ctx.fillStyle = cfg.skin;
+    ctx.beginPath();
+    ctx.arc(headCX + headR * 0.55, headCY + headR * 0.1, headR * 0.62, -Math.PI * 0.55, Math.PI * 0.55);
+    ctx.fill();
+    ctx.strokeStyle = cfg.hair;
+    ctx.lineWidth = Math.max(2, headR * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(headCX + headR * 0.25, headCY - headR * 0.7);
+    ctx.lineTo(headCX + headR * 0.9, headCY + headR * 0.7);
+    ctx.stroke();
+  } else {
+    // front / 3-4-front — face visible, offset for 3/4
+    const faceOff = view === '3-4-front' ? headR * 0.18 : 0;
+    drawFace(ctx, headCX + faceOff, headCY, headR * (view === '3-4-front' ? 0.92 : 1), expression, pose.mouthOpen, pose.blink, cfg);
+  }
 
   // hair bow for girl
   if ((obj.characterType === 'girl' || obj.characterType === 'woman') && hairStyle === 'long') {
@@ -1476,6 +1814,7 @@ function drawHumanoid(
 
   ctx.restore(); // head tilt
   ctx.restore(); // body
+  ctx.restore(); // view
 }
 
 // ---------------------------------------------------------------------------
@@ -1488,8 +1827,11 @@ function drawQuadruped(
   pose: CharacterPose,
   lifeT: number,
   expression: CharacterExpression,
-  kind: CharacterType
+  kind: CharacterType,
+  view: AnimationView = 'front'
 ) {
+  const isBackView = view === '3-4-back' || view === 'back';
+  const isQuarter = view === '3-4-front' || view === '3-4-back';
   const w = obj.width * obj.scaleX;
   const h = obj.height * obj.scaleY;
   const x = obj.x;
@@ -1614,19 +1956,28 @@ function drawQuadruped(
   // nose
   ctx.fillStyle = cfg.nose;
   ellipse(ctx, headCX + headR * 0.62, headCY + headR * 0.12, headR * 0.16, headR * 0.12, cfg.nose);
-  // eyes
-  ctx.fillStyle = '#1F2937';
-  ctx.beginPath();
-  ctx.arc(headCX + headR * 0.15, headCY - headR * 0.2, headR * 0.09, 0, TAU);
-  ctx.arc(headCX + headR * 0.55, headCY - headR * 0.2, headR * 0.09, 0, TAU);
-  ctx.fill();
-  // happy mouth
-  if (expression === 'happy' || expression === 'laughing') {
-    ctx.strokeStyle = '#7C2D12';
-    ctx.lineWidth = Math.max(1.5, headR * 0.07);
+  if (isBackView) {
+    // back of head — no face; just ears/tail side
+    ctx.fillStyle = cfg.body;
     ctx.beginPath();
-    ctx.arc(headCX + headR * 0.55, headCY + headR * 0.3, headR * 0.18, 0.15 * Math.PI, 0.85 * Math.PI);
-    ctx.stroke();
+    ctx.arc(headCX, headCY, headR * 0.98, 0, TAU);
+    ctx.fill();
+  } else {
+    // eyes
+    const eyeOff = view === '3-4-front' ? headR * 0.06 : 0;
+    ctx.fillStyle = '#1F2937';
+    ctx.beginPath();
+    ctx.arc(headCX + headR * 0.15 + eyeOff, headCY - headR * 0.2, headR * 0.09, 0, TAU);
+    ctx.arc(headCX + headR * 0.55 + eyeOff, headCY - headR * 0.2, headR * 0.09, 0, TAU);
+    ctx.fill();
+    // happy mouth
+    if (expression === 'happy' || expression === 'laughing') {
+      ctx.strokeStyle = '#7C2D12';
+      ctx.lineWidth = Math.max(1.5, headR * 0.07);
+      ctx.beginPath();
+      ctx.arc(headCX + headR * 0.55 + eyeOff, headCY + headR * 0.3, headR * 0.18, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+    }
   }
   // ---- species-specific features (Part 4) ----
   if (kind === 'lion') {
@@ -1719,8 +2070,10 @@ function drawBird(
   ctx: CanvasRenderingContext2D,
   obj: CanvasObject,
   pose: CharacterPose,
-  lifeT: number
+  lifeT: number,
+  view: AnimationView = 'front'
 ) {
+  const isBackView = view === '3-4-back' || view === 'back';
   const w = obj.width * obj.scaleX;
   const h = obj.height * obj.scaleY;
   const x = obj.x;
@@ -1761,20 +2114,22 @@ function drawBird(
   ctx.arc(headCX, headCY, headR, 0, TAU);
   ctx.fill();
 
-  // beak
-  ctx.fillStyle = cfg.nose;
-  ctx.beginPath();
-  ctx.moveTo(headCX + headR * 0.75, headCY);
-  ctx.lineTo(headCX + headR * 1.5, headCY + headR * 0.12);
-  ctx.lineTo(headCX + headR * 0.75, headCY + headR * 0.35);
-  ctx.closePath();
-  ctx.fill();
+  if (!isBackView) {
+    // beak
+    ctx.fillStyle = cfg.nose;
+    ctx.beginPath();
+    ctx.moveTo(headCX + headR * 0.75, headCY);
+    ctx.lineTo(headCX + headR * 1.5, headCY + headR * 0.12);
+    ctx.lineTo(headCX + headR * 0.75, headCY + headR * 0.35);
+    ctx.closePath();
+    ctx.fill();
 
-  // eye
-  ctx.fillStyle = '#1F2937';
-  ctx.beginPath();
-  ctx.arc(headCX + headR * 0.3, headCY - headR * 0.15, headR * 0.14, 0, TAU);
-  ctx.fill();
+    // eye
+    ctx.fillStyle = '#1F2937';
+    ctx.beginPath();
+    ctx.arc(headCX + headR * 0.3, headCY - headR * 0.15, headR * 0.14, 0, TAU);
+    ctx.fill();
+  }
 
   // legs
   const legY = bodyY + bodyR * 0.8;
@@ -1813,6 +2168,9 @@ export interface DrawObjectOptions {
   sceneDuration?: number;
   /** Live lip-sync level 0..1 — drives mouth of 'talk' characters. */
   lipSyncLevel?: number;
+  /** Pre-computed poses per object id (used by the PoseAnimator engine so the
+   *  main canvas and the picker previews share the exact same motion). */
+  poses?: Record<string, CharacterPose>;
 }
 
 function drawObject(
@@ -1849,7 +2207,7 @@ function drawObject(
   }
 
   const action = obj.action || 'idle';
-  const pose = getActionPose(action, t);
+  const pose = opts.poses?.[obj.id] || getActionPose(action, t);
 
   // Live lip-sync: 'talk' characters open their mouth with the audio level
   if (action === 'talk' && opts.lipSyncLevel !== undefined) {
@@ -1880,15 +2238,15 @@ function drawObject(
   } else if (obj.type === 'character') {
     const kind = (obj.characterType || 'boy') as CharacterType;
     if (kind === 'bird' || kind === 'duck') {
-      drawBird(ctx, obj, pose, lifeT);
+      drawBird(ctx, obj, pose, lifeT, obj.view || 'front');
     } else if (
       kind === 'dog' || kind === 'cat' || kind === 'cow' || kind === 'goat' ||
       kind === 'fox' || kind === 'rabbit' || kind === 'lion' || kind === 'elephant' ||
       kind === 'horse' || kind === 'sheep' || kind === 'tiger' || kind === 'monkey'
     ) {
-      drawQuadruped(ctx, obj, pose, lifeT, obj.expression || 'neutral', kind);
+      drawQuadruped(ctx, obj, pose, lifeT, obj.expression || 'neutral', kind, obj.view || 'front');
     } else {
-      drawHumanoid(ctx, obj, pose, lifeT, obj.expression || 'neutral');
+      drawHumanoid(ctx, obj, pose, lifeT, obj.expression || 'neutral', obj.view || 'front');
     }
   } else if (obj.type === 'background') {
     drawBackgroundShape(ctx, obj);

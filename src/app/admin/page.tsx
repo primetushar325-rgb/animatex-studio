@@ -19,8 +19,12 @@ import {
   Trash2,
   Loader2,
   BarChart3,
+  Activity,
+  Plus,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth-store';
+import { ACTION_REGISTRY, ACTION_CATEGORIES, type ActionClip, type ActionCategory } from '@/lib/editor/animations';
+import type { CharacterAction } from '@/types/animation';
 import { Logo } from '@/components/brand/Logo';
 
 // ---------------------------------------------------------------------------
@@ -66,7 +70,7 @@ interface AssetRow {
   createdAt: number;
 }
 
-type Tab = 'dashboard' | 'users' | 'credits' | 'assets' | 'flags';
+type Tab = 'dashboard' | 'users' | 'credits' | 'assets' | 'flags' | 'animations';
 
 const EMPTY_STATS: AdminStats = {
   totalUsers: 0, activeUsers: 0, totalProjects: 0, totalScenes: 0,
@@ -82,6 +86,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const [animOverrides, setAnimOverrides] = useState<Record<string, Partial<ActionClip>>>({});
+  const [newAction, setNewAction] = useState({ id: '', label: '', category: 'basic' as ActionCategory, action: 'idle' as CharacterAction, speed: 1, loop: true });
   const [loadingData, setLoadingData] = useState(true);
   const [search, setSearch] = useState('');
   const [planFilter, setPlanFilter] = useState<'all' | 'free' | 'pro'>('all');
@@ -96,16 +102,18 @@ export default function AdminPage() {
   const loadAdminData = useCallback(async () => {
     setLoadingData(true);
     try {
-      const [statsRes, usersRes, assetsRes, flagsRes] = await Promise.all([
+      const [statsRes, usersRes, assetsRes, flagsRes, animRes] = await Promise.all([
         fetch('/api/admin/stats').then((r) => r.json()),
         fetch('/api/admin/users').then((r) => r.json()),
         fetch('/api/admin/assets').then((r) => r.json()),
         fetch('/api/admin/flags').then((r) => r.json()),
+        fetch('/api/admin/animations').then((r) => r.json()),
       ]);
       setStats(statsRes || EMPTY_STATS);
       setUsers(usersRes.users || []);
       setAssets(assetsRes.assets || []);
       setFlags(flagsRes.flags || {});
+      setAnimOverrides(animRes.overrides || {});
     } catch {
       // keep empty state
     } finally {
@@ -169,6 +177,50 @@ export default function AdminPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const saveAnimOverrides = async () => {
+    try {
+      await fetch('/api/admin/animations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides: animOverrides }),
+      });
+      showNotice('Animation settings saved ✓');
+    } catch {
+      showNotice('Save failed (kept locally)');
+    }
+  };
+
+  const patchAnim = (id: string, patch: Partial<ActionClip>) => {
+    setAnimOverrides((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || {}), ...patch },
+    }));
+  };
+
+  const addNewAction = () => {
+    if (!newAction.id.trim() || !newAction.label.trim()) {
+      showNotice('Name + label required');
+      return;
+    }
+    const id = newAction.id.trim().toLowerCase().replace(/\s+/g, '-');
+    setAnimOverrides((prev) => ({
+      ...prev,
+      [id]: {
+        id,
+        label: newAction.label.trim(),
+        category: newAction.category,
+        action: newAction.action,
+        speed: newAction.speed,
+        loop: newAction.loop,
+        duration: 1200,
+        fps: 30,
+        enabled: true,
+      },
+    }));
+    setNewAction({ id: '', label: '', category: 'basic', action: 'idle', speed: 1, loop: true });
+    showNotice('Action added — Save চাপলে কার্যকর হবে');
   };
 
   const toggleFlag = async (key: string) => {
@@ -276,6 +328,7 @@ export default function AdminPage() {
           {tabBtn('credits', 'Credits', <Coins size={15} />)}
           {tabBtn('assets', 'Assets', <ImageIcon size={15} />)}
           {tabBtn('flags', 'Feature Flags', <Flag size={15} />)}
+          {tabBtn('animations', 'Animations', <Activity size={15} />)}
         </div>
 
         {loadingData ? (
@@ -531,6 +584,67 @@ export default function AdminPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ============ ANIMATIONS ============ */}
+            {tab === 'animations' && (
+              <div className="space-y-4">
+                <div className="editor-panel-2 border border-[var(--editor-border)] rounded-2xl p-4">
+                  <h3 className="text-white font-semibold text-sm mb-1">Animation Library ({ACTION_REGISTRY.length} actions)</h3>
+                  <p className="text-xs text-[var(--editor-text-2)] mb-4">
+                    Clip properties (speed/loop/duration/fps) + enable/disable — redeploy ছাড়া সেভ হয়। নতুন action যোগ করতে নিচের ফর্ম।
+                  </p>
+
+                  {/* Add new action */}
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4">
+                    <input value={newAction.id} onChange={(e) => setNewAction((n) => ({ ...n, id: e.target.value }))} placeholder="id (walk-slow)" className="editor-input px-2 py-1.5 text-xs" />
+                    <input value={newAction.label} onChange={(e) => setNewAction((n) => ({ ...n, label: e.target.value }))} placeholder="Label" className="editor-input px-2 py-1.5 text-xs" />
+                    <select value={newAction.category} onChange={(e) => setNewAction((n) => ({ ...n, category: e.target.value as ActionCategory }))} className="editor-input px-2 py-1.5 text-xs">
+                      {ACTION_CATEGORIES.filter((c) => c.id !== 'all').map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                    <select value={newAction.action} onChange={(e) => setNewAction((n) => ({ ...n, action: e.target.value as CharacterAction }))} className="editor-input px-2 py-1.5 text-xs">
+                      {Array.from(new Set(ACTION_REGISTRY.map((a) => a.action))).map((a) => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                    <input type="number" step="0.25" value={newAction.speed} onChange={(e) => setNewAction((n) => ({ ...n, speed: parseFloat(e.target.value) || 1 }))} placeholder="Speed" className="editor-input px-2 py-1.5 text-xs" />
+                    <button onClick={addNewAction} className="px-2 py-1.5 rounded-lg editor-gradient text-white text-xs font-medium flex items-center justify-center gap-1">
+                      <Plus size={13} /> Add
+                    </button>
+                  </div>
+
+                  <div className="max-h-[50vh] overflow-y-auto editor-scroll">
+                    {ACTION_REGISTRY.map((clip) => {
+                      const ov = animOverrides[clip.id] || {};
+                      const speed = ov.speed ?? clip.speed;
+                      const loop = ov.loop ?? clip.loop;
+                      const duration = ov.duration ?? clip.duration;
+                      const fps = ov.fps ?? clip.fps;
+                      const enabled = ov.enabled ?? clip.enabled;
+                      const cat = ACTION_CATEGORIES.find((c) => c.id === clip.category);
+                      return (
+                        <div key={clip.id} className="flex flex-wrap items-center gap-2 py-2 border-b border-[var(--editor-border)] last:border-0">
+                          <div className="w-40 min-w-0">
+                            <p className="text-sm text-white truncate">{clip.label}</p>
+                            <p className="text-[10px] text-[var(--editor-text-2)]">{clip.id} · {cat?.label}</p>
+                          </div>
+                          <input type="number" step="0.25" value={speed} onChange={(e) => patchAnim(clip.id, { speed: parseFloat(e.target.value) || 1 })} className="editor-input w-16 px-1.5 py-1 text-xs" title="Speed" />
+                          <input type="number" value={duration} onChange={(e) => patchAnim(clip.id, { duration: parseInt(e.target.value, 10) || 1000 })} className="editor-input w-20 px-1.5 py-1 text-xs" title="Duration (ms)" />
+                          <input type="number" value={fps} onChange={(e) => patchAnim(clip.id, { fps: parseInt(e.target.value, 10) || 30 })} className="editor-input w-14 px-1.5 py-1 text-xs" title="FPS" />
+                          <button onClick={() => patchAnim(clip.id, { loop: !loop })} className={`px-2 py-1 rounded-lg text-[10px] font-medium ${loop ? 'bg-green-500/20 text-green-400' : 'bg-[#33333F] text-[var(--editor-text-2)]'}`}>
+                            {loop ? 'LOOP' : 'ONCE'}
+                          </button>
+                          <button onClick={() => patchAnim(clip.id, { enabled: !enabled })} className={`px-2 py-1 rounded-lg text-[10px] font-medium ${enabled ? 'bg-[var(--editor-accent)]/20 text-[var(--editor-accent)]' : 'bg-red-500/20 text-red-400'}`}>
+                            {enabled ? 'ON' : 'OFF'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button onClick={saveAnimOverrides} className="mt-4 w-full py-2.5 rounded-xl editor-gradient text-white text-sm font-semibold">
+                    💾 Save Animation Settings
+                  </button>
+                </div>
               </div>
             )}
 

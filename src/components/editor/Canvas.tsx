@@ -12,6 +12,8 @@ import {
   transitionProgress,
 } from '@/lib/editor/renderer';
 import { applyKeyframes } from '@/lib/editor/keyframes';
+import { PoseAnimator } from '@/lib/editor/animations';
+import type { CharacterPose } from '@/lib/editor/renderer';
 import type { CanvasObject } from '@/types/animation';
 
 interface CanvasProps {
@@ -63,6 +65,8 @@ export function Canvas({ onDoubleClickObject, onTapCharacter }: CanvasProps) {
   const dragRef = useRef<DragState | null>(null);
   const animClockRef = useRef(0);
   const lastFrameRef = useRef(0);
+  // per-object PoseAnimators — smooth action transitions on the main canvas
+  const animatorsRef = useRef(new Map<string, PoseAnimator>());
   // tap detection: pointer-down position + whether the down was a multi-select
   const downScreenRef = useRef<{ x: number; y: number } | null>(null);
   const downPointRef = useRef<Point | null>(null);
@@ -83,6 +87,7 @@ export function Canvas({ onDoubleClickObject, onTapCharacter }: CanvasProps) {
     scenes,
     currentTime,
     isPlaying,
+    playbackRate,
     watermarkEnabled,
     watermarkText,
     lipSyncLevel,
@@ -139,10 +144,26 @@ export function Canvas({ onDoubleClickObject, onTapCharacter }: CanvasProps) {
       }
     }
 
+    // PoseAnimator: compute a blended pose for every character (transitions
+    // between actions are smooth, and match the picker previews exactly).
+    const poses: Record<string, CharacterPose> = {};
+    for (const obj of effectiveObjects) {
+      if (obj.type !== 'character') continue;
+      let anim = animatorsRef.current.get(obj.id);
+      if (!anim) {
+        anim = new PoseAnimator();
+        animatorsRef.current.set(obj.id, anim);
+      }
+      const now = performance.now();
+      const action = obj.action || 'idle';
+      poses[obj.id] = anim.step(action, animClockRef.current, now, playbackRate);
+    }
+
     const drawOpts = {
       playback: isPlaying,
       sceneDuration: currentScene?.duration,
       lipSyncLevel,
+      poses,
       watermark: { text: watermarkText, enabled: watermarkEnabled },
     };
 
@@ -203,6 +224,7 @@ export function Canvas({ onDoubleClickObject, onTapCharacter }: CanvasProps) {
     currentProject,
     isPlaying,
     currentTime,
+    playbackRate,
     watermarkEnabled,
     watermarkText,
     lipSyncLevel,
