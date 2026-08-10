@@ -382,3 +382,12 @@ editor's character picker and get drawn on the canvas when clicked.
 - **Adaptive ruler** (1s → 0.5s → 0.1s by zoom), zoom in/out/fit preserving currentTime, auto-scroll during playback.
 - **Frame stepping (±1/fps), FPS config (24–60), playback speed 0.25–2x, loop In/Out region, markers, professional toolbar, undo/redo everywhere.**
 - Verified: pixel roundtrip, split keyframe preservation (1/3/5 → A:1,3 / B:1.5), exact placement — all automated tests pass.
+
+---
+
+## 🆕 PART 10 — ANIMATION VIDEO EDITOR V2 (2026-08)
+
+- **Official 15-character library** (from the uploaded reference sheet): Child Boy, Child Girl, Student Boy, Student Girl, Young Man, Young Woman, Village Man, Farmer, Shopkeeper, Teacher, Doctor, Police Officer, Old Man, Old Woman, Baby — each with unique id/type/category/gender/default animation, procedural full-body art, category chips + live thumbnails in the Assets panel.
+- **5 views per character**: FRONT / 3/4 FRONT / SIDE / 3/4 BACK / BACK (side = profile face, back = back-of-head; identity consistent). Verified: 15 chars × 5 views render.
+- **CRITICAL FIX — playhead = edit position**: every new element (character/text/prop/audio) now starts its timeline clip EXACTLY at `currentTime` (was hardcoded 0). Keyframes/split already exact (Part 9). Full scenario test passes: add@1.63 → clip 1.63; kf@3.00 → 1370 local; split@2.00 → exact.
+- **Properties panel**: clip Start/End/Duration editable, per-object animation speed (0.25–2x), copy/paste clip at playhead.

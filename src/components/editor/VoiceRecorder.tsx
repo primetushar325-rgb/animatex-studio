@@ -169,7 +169,7 @@ export function VoiceRecorder({ isOpen, onClose }: VoiceRecorderProps) {
       // 3) add to the Voice track on the timeline
       const voiceTrack = tracks.find((t) => t.sceneId === currentSceneId && t.type === 'voice');
       if (voiceTrack) {
-        addClip(voiceTrack.id, audioId, 0, durationMs);
+        addClip(voiceTrack.id, audioId, useEditorStore.getState().currentTime || 0, durationMs);
       } else {
         setErrorMsg('No Voice track found — added audio only');
       }

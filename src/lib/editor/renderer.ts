@@ -1153,6 +1153,61 @@ const HUMAN_PALETTES: Record<string, HumanCfg> = {
     hairStyle: 'short',
     hat: 'cap',
   },
+  // ---- Official 15-character library (Part 10) ----
+  'student-boy': {
+    skin: '#F6C39A',
+    hair: '#3B2A1A',
+    shirt: '#F97316',
+    pants: '#1D4ED8',
+    shoes: '#FFFFFF',
+    hairStyle: 'short',
+    hat: 'cap',
+  },
+  'student-girl': {
+    skin: '#F6C39A',
+    hair: '#111827',
+    shirt: '#EF4444',
+    pants: '#3B82F6',
+    shoes: '#F9A8D4',
+    hairStyle: 'long',
+    dress: true,
+  },
+  'young-man': {
+    skin: '#E8B78D',
+    hair: '#1F2937',
+    shirt: '#10B981',
+    pants: '#374151',
+    shoes: '#111827',
+    hairStyle: 'short',
+    build: 'wide',
+  },
+  'young-woman': {
+    skin: '#F0C49A',
+    hair: '#7C2D12',
+    shirt: '#EC4899',
+    pants: '#8B5CF6',
+    shoes: '#C2185B',
+    hairStyle: 'long',
+    dress: true,
+  },
+  'village-man': {
+    skin: '#C68E62',
+    hair: '#3F2D20',
+    shirt: '#DCB98A',
+    pants: '#7C4A2A',
+    shoes: '#5D4037',
+    hairStyle: 'short',
+    hat: 'none',
+  },
+  shopkeeper: {
+    skin: '#D9A066',
+    hair: '#4E342E',
+    shirt: '#B45309',
+    pants: '#1F2937',
+    shoes: '#111827',
+    hairStyle: 'short',
+    build: 'wide',
+  },
 };
 
 interface AnimalCfg {
@@ -1560,10 +1615,10 @@ function drawHumanoid(
   const cfg = HUMAN_PALETTES[obj.characterType || 'boy'] || HUMAN_PALETTES.boy;
 
   // Angle system — narrower silhouette + slight vertical squash for turned views
-  const viewScaleX = view === '3-4-front' ? 0.92 : view === '3-4-back' ? 0.88 : view === 'back' ? 0.9 : 1;
+  const viewScaleX = view === '3-4-front' ? 0.92 : view === '3-4-back' ? 0.88 : view === 'back' ? 0.9 : view === 'side' ? 0.5 : 1;
   const viewOffsetX = view === '3-4-front' ? w * 0.02 : 0;
   const isBack = view === '3-4-back' || view === 'back';
-  const isQuarter = view === '3-4-front' || view === '3-4-back';
+  const isQuarter = view === '3-4-front' || view === '3-4-back' || view === 'side';
   ctx.save();
   ctx.translate(x + w / 2 + viewOffsetX, y + h / 2);
   ctx.scale(viewScaleX, isQuarter ? 0.99 : 1);
@@ -1795,6 +1850,34 @@ function drawHumanoid(
     ctx.moveTo(headCX + headR * 0.25, headCY - headR * 0.7);
     ctx.lineTo(headCX + headR * 0.9, headCY + headR * 0.7);
     ctx.stroke();
+  } else if (view === 'side') {
+    // side profile — nose bump + single eye + mouth
+    ctx.fillStyle = cfg.skin;
+    ctx.beginPath();
+    ctx.arc(headCX, headCY, headR, 0, TAU);
+    ctx.fill();
+    // nose
+    ctx.fillStyle = cfg.skin;
+    ctx.beginPath();
+    ctx.arc(headCX + headR * 0.72, headCY + headR * 0.1, headR * 0.3, 0, TAU);
+    ctx.fill();
+    // single eye
+    ctx.fillStyle = '#1F2937';
+    ctx.beginPath();
+    ctx.arc(headCX + headR * 0.28, headCY - headR * 0.12, headR * 0.1, 0, TAU);
+    ctx.fill();
+    // mouth
+    ctx.strokeStyle = '#7C2D12';
+    ctx.lineWidth = Math.max(2, headR * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(headCX + headR * 0.55, headCY + headR * 0.35);
+    ctx.lineTo(headCX + headR * 0.95, headCY + headR * 0.3);
+    ctx.stroke();
+    // ear on far side
+    ctx.fillStyle = cfg.skin;
+    ctx.beginPath();
+    ctx.arc(headCX - headR * 0.82, headCY, headR * 0.14, 0, TAU);
+    ctx.fill();
   } else {
     // front / 3-4-front — face visible, offset for 3/4
     const faceOff = view === '3-4-front' ? headR * 0.18 : 0;

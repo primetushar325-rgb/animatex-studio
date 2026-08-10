@@ -30,7 +30,7 @@ import { getActionPose } from './renderer';
 // Types
 // ---------------------------------------------------------------------------
 
-export type AnimationView = 'front' | '3-4-front' | '3-4-back' | 'back';
+export type AnimationView = 'front' | '3-4-front' | 'side' | '3-4-back' | 'back';
 
 export type ActionCategory =
   | 'basic'
@@ -172,6 +172,7 @@ export const ACTION_CATEGORIES: { id: ActionCategory | 'all'; label: string }[] 
 export const VIEW_LABELS: Record<AnimationView, string> = {
   front: 'FRONT',
   '3-4-front': '3/4 FRONT',
+  side: 'SIDE',
   '3-4-back': '3/4 BACK',
   back: 'BACK',
 };
@@ -231,7 +232,7 @@ export function searchActions(query: string, category: ActionCategory | 'all' = 
 /** How close a clip is to an angle: exact = 0, adjacent = 1, generic = 2. */
 function angleDistance(view: AnimationView, clipView: AnimationView): number {
   if (view === clipView) return 0;
-  const order: AnimationView[] = ['front', '3-4-front', '3-4-back', 'back'];
+  const order: AnimationView[] = ['front', '3-4-front', 'side', '3-4-back', 'back'];
   return Math.abs(order.indexOf(view) - order.indexOf(clipView));
 }
 

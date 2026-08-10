@@ -202,7 +202,7 @@ export function ActionPicker({ isOpen, onClose }: ActionPickerProps) {
 
         {/* Angle (view) tabs */}
         <div className="px-4 pt-2.5">
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-5 gap-1">
             {(Object.keys(VIEW_LABELS) as AnimationView[]).map((v) => (
               <button
                 key={v}

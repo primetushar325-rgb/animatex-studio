@@ -119,7 +119,10 @@ export type CharacterType =
   // Expanded set (Part 4)
   | 'baby' | 'doctor' | 'teacher' | 'farmer' | 'chef' | 'soldier'
   | 'princess' | 'king' | 'astronaut' | 'police'
-  | 'fox' | 'rabbit' | 'lion' | 'elephant' | 'duck' | 'horse' | 'sheep' | 'tiger' | 'monkey';
+  | 'fox' | 'rabbit' | 'lion' | 'elephant' | 'duck' | 'horse' | 'sheep' | 'tiger' | 'monkey'
+  // Official 15-character library (Part 10)
+  | 'student-boy' | 'student-girl' | 'young-man' | 'young-woman'
+  | 'village-man' | 'shopkeeper';
 
 export type CharacterExpression = 
   | 'neutral' | 'happy' | 'sad' | 'angry' | 'scared' 
@@ -168,7 +171,7 @@ export interface BoneTransform {
 }
 
 /** Camera/character view angle used by the animation engine. */
-export type AnimationView = 'front' | '3-4-front' | '3-4-back' | 'back';
+export type AnimationView = 'front' | '3-4-front' | 'side' | '3-4-back' | 'back';
 
 // Canvas Objects (elements placed on the stage)
 export type CanvasObjectType = 'character' | 'background' | 'prop' | 'text';
@@ -230,6 +233,8 @@ export interface CanvasObject {
   flipX?: boolean;
   /** Character view angle (drives angle-specific drawing + animation) */
   view?: AnimationView;
+  /** Per-object animation speed multiplier (0.25–2). Affects motion only. */
+  animSpeed?: number;
   /** Day/night/weather tint variant for backgrounds */
   variant?: 'day' | 'night' | 'rain' | 'cloudy' | 'sunset' | undefined;
 }

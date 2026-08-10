@@ -111,7 +111,7 @@ export function CharacterPanel({ isOpen, onClose, onCreate }: CharacterPanelProp
       expression: 'neutral',
       action: 'idle',
     });
-    addClip(track.id, assetId, 0, 3000);
+    addClip(track.id, assetId, useEditorStore.getState().currentTime || 0, 3000);
     recordRecent({ kind: 'character', id: assetId, name, url: imageUrl } as AssetRef);
     onClose();
   };

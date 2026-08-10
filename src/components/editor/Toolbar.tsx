@@ -73,13 +73,22 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText, onExport, onSea
     toggleTimeline,
     showTimeline,
     loadEditorState,
+    currentSceneId,
+    moveClip,
+    setClipDuration,
+    copyClip,
+    pasteClip,
   } = useEditorStore();
 
   const { saveStatus, currentProject } = useProjectStore();
+  const { tracks } = useEditorStore();
 
   const selectedObject = canvasObjects.find((o) => o.id === selectedObjectId);
   const isTextObject = selectedObject?.type === 'text';
   const multiCount = selectedObjectIds.length;
+  const selectedClip = selectedObject?.assetId
+    ? clips.find((c) => c.assetId === selectedObject.assetId && c.sceneId === currentSceneId)
+    : undefined;
 
   const handleTool = (id: 'select' | 'scale' | 'rotate' | 'text') => {
     if (id === 'text') onAddText?.();
@@ -534,6 +543,91 @@ export function Toolbar({ onBack, onAddText, onSave, onEditText, onExport, onSea
           <button onClick={alignCenterV} className={`${iconBtn()} border border-[var(--editor-border)]`} title="Center vertically">
             <AlignVerticalDistributeCenter size={16} />
           </button>
+
+          {/* Clip timing (start / end / duration) */}
+          {selectedClip && (
+            <>
+              <div className="h-5 w-px bg-[var(--editor-border)]" />
+              <label className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-[var(--editor-text-2)] text-xs">Start</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  min={0}
+                  value={+(selectedClip.startTime / 1000).toFixed(2)}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!Number.isNaN(v)) moveClip(selectedClip.id, Math.max(0, v * 1000));
+                  }}
+                  className={darkInput}
+                  title="Clip start (s) — playhead-aligned"
+                />
+                <span className="text-[10px] text-[var(--editor-text-2)]">s</span>
+              </label>
+              <label className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-[var(--editor-text-2)] text-xs">End</span>
+                <span className="text-xs text-white font-mono">
+                  {(selectedClip.endTime / 1000).toFixed(2)}s
+                </span>
+              </label>
+              <label className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-[var(--editor-text-2)] text-xs">Dur</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  min={0.2}
+                  value={+(selectedClip.duration / 1000).toFixed(2)}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!Number.isNaN(v) && v >= 0.2) setClipDuration(selectedClip.id, v * 1000);
+                  }}
+                  className={darkInput}
+                  title="Clip duration (s)"
+                />
+                <span className="text-[10px] text-[var(--editor-text-2)]">s</span>
+              </label>
+            </>
+          )}
+
+          {/* Per-object animation speed */}
+          {selectedObject?.type === 'character' && (
+            <label className="flex items-center gap-1.5 whitespace-nowrap">
+              <span className="text-[var(--editor-text-2)] text-xs">Anim</span>
+              <select
+                value={selectedObject.animSpeed || 1}
+                onChange={(e) => updateCanvasObject(selectedObject.id, { animSpeed: parseFloat(e.target.value) })}
+                className="px-1.5 py-1 editor-input text-xs"
+                title="Animation speed (motion only, timing unchanged)"
+              >
+                {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((sp) => (
+                  <option key={sp} value={sp}>{sp}x</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* Copy/Paste clip */}
+          {selectedClip && (
+            <>
+              <button
+                onClick={() => copyClip(selectedClip.id)}
+                className="px-2 py-1.5 editor-panel-2 hover:editor-panel-3 text-[var(--editor-text-2)] hover:text-white rounded-lg text-[10px] flex items-center gap-1"
+                title="Copy clip"
+              >
+                <Copy size={11} /> Copy
+              </button>
+              <button
+                onClick={() => {
+                  const track = tracks.find((t) => t.sceneId === currentSceneId && t.type === 'character');
+                  if (track) pasteClip(track.id, currentTime);
+                }}
+                className="px-2 py-1.5 editor-panel-2 hover:editor-panel-3 text-[var(--editor-text-2)] hover:text-white rounded-lg text-[10px] flex items-center gap-1"
+                title="Paste clip at playhead"
+              >
+                Paste
+              </button>
+            </>
+          )}
 
           {/* Motion preset */}
           <label className="flex items-center gap-1 whitespace-nowrap">

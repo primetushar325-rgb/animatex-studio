@@ -325,7 +325,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       if (bgTrack) {
         const assetId = newId();
         st.addCanvasObject({ type: 'background', x: 0, y: 0, width: pw, height: ph, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, zIndex: 0, assetId, name: s.background });
-        st.addClip(bgTrack.id, assetId, 0, 5000);
+        st.addClip(bgTrack.id, assetId, st.currentTime || 0, 5000);
       }
 
       const n = s.characters.length;
@@ -339,7 +339,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
           width: w, height: h, rotation: 0, scaleX: 1.1, scaleY: 1.1, opacity: 1, zIndex: 10,
           assetId, name: c.name, characterType: c.type, expression: c.expression, action: c.action,
         });
-        st.addClip(charTrack.id, assetId, 0, 5000);
+        st.addClip(charTrack.id, assetId, st.currentTime || 0, 5000);
       });
 
       if (propTrack) {
@@ -349,7 +349,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
             type: 'prop', x: pw * 0.75 + i * 60, y: ph * 0.62, width: 100, height: 100,
             rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, zIndex: 5, assetId, name: p,
           });
-          st.addClip(propTrack.id, assetId, 0, 5000);
+          st.addClip(propTrack.id, assetId, st.currentTime || 0, 5000);
         });
       }
     }
@@ -381,7 +381,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       width: 200, height: 300, rotation: 0, scaleX: 1.2, scaleY: 1.2, opacity: 1, zIndex: 10,
       assetId, name: type, characterType: type, expression: 'happy', action: 'idle',
     });
-    st.addClip(charTrack.id, assetId, 0, 3000);
+    st.addClip(charTrack.id, assetId, st.currentTime || 0, 3000);
     setAiStatus(`🎭 "${type}" character যোগ হয়েছে।`);
   };
 
@@ -409,7 +409,7 @@ export function Editor({ projectId, autoExport = false }: EditorProps) {
       ...(imageUrl ? { imageUrl } : {}),
       ...(kind === 'character' ? { characterType: 'custom' as const, expression: 'neutral' as const, action: 'idle' as const } : {}),
     } as never);
-    st.addClip(track.id, assetId, 0, isBg ? 5000 : 3000);
+    st.addClip(track.id, assetId, st.currentTime || 0, isBg ? 5000 : 3000);
 
     recordRecent({ kind, id: assetId, name, url: imageUrl } as AssetRef);
     showToast(`✅ ${name} যোগ হয়েছে`);

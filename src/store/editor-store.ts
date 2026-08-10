@@ -125,6 +125,8 @@ interface EditorState {
   moveClip: (clipId: string, newStartTime: number) => void;
   trimClip: (clipId: string, newStart: number, newDuration: number) => void;
   setClipDuration: (clipId: string, newDuration: number) => void;
+  copyClip: (clipId: string) => void;
+  pasteClip: (trackId: string, atTime: number) => void;
   splitClip: (clipId: string, splitTime: number) => void;
   duplicateClip: (clipId: string) => void;
   
@@ -187,6 +189,15 @@ interface EditorState {
 }
 
 const MAX_HISTORY_SIZE = 50;
+
+// clipboard for clip copy/paste (single clip)
+let clipClipboard: TimelineClip | null = null;
+export function getClipClipboard(): TimelineClip | null {
+  return clipClipboard ? JSON.parse(JSON.stringify(clipClipboard)) : null;
+}
+export function setClipClipboard(c: TimelineClip | null) {
+  clipClipboard = c ? JSON.parse(JSON.stringify(c)) : null;
+}
 
 const createDefaultScene = (order: number = 0): Scene => ({
   id: uuidv4(),
@@ -434,6 +445,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         c.id === clipId ? { ...c, duration: safe, endTime: c.startTime + safe } : c
       ),
     }));
+  },
+
+  copyClip: (clipId: string) => {
+    const clip = get().clips.find((c) => c.id === clipId);
+    if (clip) setClipClipboard(clip);
+  },
+
+  pasteClip: (trackId: string, atTime: number) => {
+    const src = getClipClipboard();
+    if (!src) return;
+    const copy: TimelineClip = {
+      ...src,
+      id: uuidv4(),
+      trackId,
+      startTime: atTime,
+      endTime: atTime + src.duration,
+      keyframes: src.keyframes.map((k) => ({ ...k, id: uuidv4() })),
+    };
+    set((st) => ({ clips: [...st.clips, copy] }));
+    get().saveSnapshot();
   },
 
   // Track Actions

@@ -13,6 +13,7 @@ import {
   type LibraryCharacter,
 } from '@/lib/editor/characterLibrary';
 import { SOUND_LIBRARY, previewSound, renderSound } from '@/lib/editor/soundKit';
+import { CHARACTER_LIBRARY_15, CHARACTER_CATEGORIES, type OfficialCharacter } from '@/lib/editor/characterLibrary15';
 import {
   Mic, Home, Building2, School, Store, BedDouble, TreePine, Waves, Tractor, Route,
   Armchair, Table as TableIcon, Smartphone, BookOpen, ShoppingBag, Car, UtensilsCrossed,
@@ -33,24 +34,18 @@ import type {
 
 export type AssetTab = 'characters' | 'backgrounds' | 'props' | 'text' | 'audio';
 
-const builtInCharacters: { type: CharacterType; name: string }[] = [
+// Official 15-character library (from the uploaded reference sheet)
+const builtInCharacters: OfficialCharacter[] = CHARACTER_LIBRARY_15;
+
+// extra creatures (kept compact)
+const extraCreatures: { type: CharacterType; name: string }[] = [
   { type: 'boy', name: 'Boy' },
   { type: 'girl', name: 'Girl' },
-  { type: 'child', name: 'Child' },
-  { type: 'man', name: 'Man' },
-  { type: 'woman', name: 'Woman' },
-  { type: 'old-man', name: 'Old Man' },
-  { type: 'old-woman', name: 'Old Woman' },
-  { type: 'baby', name: 'Baby' },
-  { type: 'doctor', name: 'Doctor' },
-  { type: 'teacher', name: 'Teacher' },
-  { type: 'farmer', name: 'Farmer' },
   { type: 'chef', name: 'Chef' },
   { type: 'soldier', name: 'Soldier' },
   { type: 'princess', name: 'Princess' },
   { type: 'king', name: 'King' },
   { type: 'astronaut', name: 'Astronaut' },
-  { type: 'police', name: 'Police' },
   { type: 'dog', name: 'Dog' },
   { type: 'cat', name: 'Cat' },
   { type: 'fox', name: 'Fox' },
@@ -193,6 +188,7 @@ type UploadKind = 'character' | 'background' | 'prop' | 'audio';
 export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: AssetPanelProps) {
   const [activeTab, setActiveTab] = useState<AssetTab>('characters');
   const [textContent, setTextContent] = useState('');
+  const [charCategory, setCharCategory] = useState<string>('All');
   const [textSize, setTextSize] = useState(48);
   const [textColor, setTextColor] = useState('#111827');
   const [textWeight, setTextWeight] = useState<'normal' | 'bold'>('normal');
@@ -229,6 +225,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
     addBackground,
     addProp,
     addAudioClip,
+    currentTime,
   } = useEditorStore();
 
   const { currentProject } = useProjectStore();
@@ -296,7 +293,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
         duration: 1000,
       };
       addAudioClip(clip);
-      if (track) addClip(track.id, audioId, 0, 1000);
+      if (track) addClip(track.id, audioId, currentTime ?? 0, 1000);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Sound failed to add');
     } finally {
@@ -365,17 +362,21 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
         ...extra,
       });
 
-      addClip(track.id, assetId, 0, trackType === 'background' ? 5000 : 3000);
+      // CRITICAL: new clips start EXACTLY at the playhead (currentTime)
+      const start = currentTime ?? 0;
+      addClip(track.id, assetId, start, trackType === 'background' ? 5000 : 3000);
     },
-    [addCanvasObject, addClip, findTrack, currentProject, defaultSizeFor]
+    [addCanvasObject, addClip, findTrack, currentProject, defaultSizeFor, currentTime]
   );
 
-  const handleAddCharacter = (char: { type: CharacterType; name: string }) => {
+  const handleAddCharacter = (char: OfficialCharacter | { type: CharacterType; name: string }) => {
+    const official = 'default' in char ? char : undefined;
     spawnObject('character', {
       characterType: char.type,
       name: char.name,
-      expression: 'neutral',
-      action: 'idle',
+      expression: official?.default.expression || 'neutral',
+      action: official?.default.action || 'idle',
+      ...(official ? { width: official.size.w, height: official.size.h } : {}),
     });
     onClose();
   };
@@ -475,7 +476,7 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
           duration: 0,
         };
         addAudioClip(clip);
-        if (track) addClip(track.id, assetId, 0, 3000);
+        if (track) addClip(track.id, assetId, currentTime ?? 0, 3000);
       }
       onClose();
     } catch (err) {
@@ -705,19 +706,55 @@ export function AssetPanel({ isOpen, onClose, initialTab, onRecordVoice }: Asset
               </div>
 
               <div className="pt-4 border-t">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Built-in Characters</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {builtInCharacters.map((char) => (
+                <h3 className="text-sm font-medium text-gray-700 mb-2">🎬 Character Library</h3>
+                {/* category chips */}
+                <div className="flex gap-1.5 mb-2 overflow-x-auto editor-scroll">
+                  {CHARACTER_CATEGORIES.map((cat) => (
                     <button
-                      key={char.type}
-                      onClick={() => handleAddCharacter(char)}
-                      className="p-3 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
+                      key={cat.id}
+                      onClick={() => setCharCategory(cat.id)}
+                      className={`px-2.5 py-1 rounded-full text-[10px] whitespace-nowrap transition-colors ${
+                        charCategory === cat.id
+                          ? 'editor-gradient text-white font-medium'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
                     >
-                      <CharacterThumb type={char.type} className="mb-1" />
-                      <span className="text-xs text-gray-600">{char.name}</span>
+                      {cat.label}
                     </button>
                   ))}
                 </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {builtInCharacters
+                    .filter((c) => charCategory === 'All' || c.category === charCategory)
+                    .map((char) => (
+                      <button
+                        key={char.id}
+                        onClick={() => handleAddCharacter(char)}
+                        className="p-2 bg-gray-50 rounded-xl hover:bg-blue-50 hover:ring-2 hover:ring-blue-200 transition-all flex flex-col items-center"
+                        title={`${char.name} · ${char.category} — adds at playhead`}
+                      >
+                        <CharacterThumb type={char.type} className="mb-1" />
+                        <span className="text-[11px] text-gray-600 truncate w-full text-center">{char.name}</span>
+                        <span className="text-[8px] text-gray-400">{char.category}</span>
+                      </button>
+                    ))}
+                </div>
+                {/* extra creatures */}
+                <details className="mt-2">
+                  <summary className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">More creatures…</summary>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {extraCreatures.map((char) => (
+                      <button
+                        key={char.type}
+                        onClick={() => handleAddCharacter(char)}
+                        className="p-2 bg-gray-50 rounded-xl hover:bg-blue-50 transition-all flex flex-col items-center"
+                      >
+                        <CharacterThumb type={char.type} className="mb-1" />
+                        <span className="text-[10px] text-gray-600 truncate w-full text-center">{char.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </details>
               </div>
 
               {customCharacters.length > 0 && (

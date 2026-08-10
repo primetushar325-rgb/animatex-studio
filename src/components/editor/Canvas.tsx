@@ -156,7 +156,8 @@ export function Canvas({ onDoubleClickObject, onTapCharacter }: CanvasProps) {
       }
       const now = performance.now();
       const action = obj.action || 'idle';
-      poses[obj.id] = anim.step(action, animClockRef.current, now, playbackRate);
+      const spd = obj.animSpeed || playbackRate;
+      poses[obj.id] = anim.step(action, animClockRef.current, now, spd);
     }
 
     const drawOpts = {

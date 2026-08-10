@@ -195,7 +195,7 @@ export function AIVoicePanel({ isOpen, onClose }: AIVoicePanelProps) {
       });
 
       const voiceTrack = tracks.find((t) => t.sceneId === currentSceneId && t.type === 'voice');
-      if (voiceTrack) addClip(voiceTrack.id, id, 0, durationMs);
+      if (voiceTrack) addClip(voiceTrack.id, id, useEditorStore.getState().currentTime || 0, durationMs);
 
       setStatus(`✅ Voice clip টাইমলাইনে যোগ হয়েছে (${(durationMs / 1000).toFixed(1)}s)`);
       onClose();
